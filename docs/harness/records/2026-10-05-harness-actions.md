@@ -36,3 +36,11 @@ Python `TemporaryDirectory`에 `AGENTS.md`, `ai/`, `docs/harness/`, `docs/conven
 - 관련 기억·적용/제외 이유: 기존 CP949 모사·실제 기억 양식 회귀 테스트를 그대로 전체 실행.
 - 생략 검증·이유·남은 위험: 실제 Linux·Windows Actions는 아직 미실행. 제품 코드 변경이 없어 제품 빌드·DB 검증은 대상 밖.
 - 최종 확인 결과·다음 행동·커밋 여부: 로컬 검증 완료. 실제 Actions 실행·체크 실패 전파·PR 결과 기록은 미완료이므로 이슈 전체 완료로 표시하지 않는다. 사용자 승인에 따라 `chore: 하네스 GitHub Actions 검사 추가`로 로컬 커밋한다. 푸시는 아직 승인되지 않았으며, 후속 승인 후 PR에서 환경별 성공 결과와 임시 실패 실행 결과를 기록해야 한다.
+
+## 후속: CodeQL 업로드 권한 수정
+
+- 사용자 요청: 기존 CodeQL 작업의 권한 부족을 수정하고 커밋·푸시한다. 현재 브랜치에서 계속 진행하며 시작 시 기존 변경 없음.
+- 원인·증거: [push 실행의 두 번째 시도](https://github.com/WookJaes/alf.io/actions/runs/37311819361/job/111774560026)에서 빌드·분석 후 결과 업로드가 `Resource not accessible by integration`으로 실패했다. 실행 로그의 자동 `GITHUB_TOKEN`에 `security-events` 권한이 없었다. Codecov 토큰과 별개다.
+- 수정: `.github/workflows/codeql-analysis.yml`의 `CodeQL-Build`에 `contents: read`, `security-events: write`를 명시한다. 권한 변경은 해당 작업에만 적용된다. 제품 코드·Secret 변경 없음.
+- 자체 검증: Ruby YAML 파싱과 두 권한 값·기존 이벤트·단계 보존 확인 및 `python3 -B ai/tests/check.py` 모두 종료 코드 0으로 통과. `git diff --check` 통과. Python 검사기 변경이 없어 기존 회귀 테스트를 반복하지 않았다. 스테이징 diff·공백 검사는 커밋 전 확인한다.
+- 다음 행동·상태: 사용자 승인에 따라 별도 `fix` 커밋 후 같은 브랜치에 푸시한다. 기존 PR #4에 반영되며, 실제 권한 수정 효과는 새 push 실행의 CodeQL 결과로 확인해야 한다. 원격 결과는 아직 미검증이다.
