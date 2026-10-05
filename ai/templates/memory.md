@@ -1,6 +1,7 @@
 # 재사용 지식
 
-- 기억 ID / 상태: candidate / confirmed / stale
+- 기억 ID:
+- 상태: candidate / confirmed / stale
 - 작성·최종 확인 날짜:
 - 적용 프로젝트·코드·도구 환경:
 - 증상 / 원인 / 해결 조치:

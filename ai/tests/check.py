@@ -15,7 +15,7 @@ REQUIRED = ('AGENTS.md', 'ai/WORKFLOW.md', 'ai/routing.md',
 
 def local_targets(document):
     """코드 블록·외부 URL·같은 문서 앵커는 검사 대상에서 제외한다."""
-    content = re.sub(r'```.*?```', '', document.read_text(), flags=re.S)
+    content = re.sub(r'```.*?```', '', document.read_text(encoding='utf-8'), flags=re.S)
     for target in re.findall(r'\]\(([^)]+)\)', content):
         target = target.strip().strip('<>')
         if target.startswith('#') or urlsplit(target).scheme:
@@ -41,7 +41,7 @@ def validate(root):
     for document in (root / 'ai/memory').glob('*.md'):
         if document.name == 'index.md':
             continue
-        match = re.search(r'^- 상태:\s*(\w+)', document.read_text(), re.M)
+        match = re.search(r'^- 상태:\s*(\w+)', document.read_text(encoding='utf-8'), re.M)
         if not match or match[1] not in ('candidate', 'confirmed', 'stale'):
             problems.append('기억 상태 누락·오류: ' + document.name)
         elif match[1] == 'confirmed':
@@ -51,7 +51,7 @@ def validate(root):
             if not evidence:
                 problems.append('확정 기억의 로컬 근거 누락: ' + document.name)
     for manifest in (root / 'docs/harness/evidence').rglob('checksums.sha256'):
-        for line in manifest.read_text().splitlines():
+        for line in manifest.read_text(encoding='utf-8').splitlines():
             if not line.strip():
                 continue
             parts = line.split(maxsplit=1)

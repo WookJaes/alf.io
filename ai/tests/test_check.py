@@ -3,6 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import hashlib
 import unittest
+from unittest.mock import patch
 
 from check import REQUIRED, ROLES, validate
 
@@ -18,8 +19,40 @@ class HarnessChecks(unittest.TestCase):
     def write(self, name, text):
         path = self.root / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        path.write_text(text, encoding='utf-8')
         return path
+
+    def cp949_default_open(self, path, mode='r', buffering=-1, encoding=None,
+                           errors=None, newline=None):
+        if 'b' not in mode and encoding is None:
+            encoding = 'cp949'
+        return self.original_open(path, mode, buffering, encoding, errors, newline)
+
+    def test_repository_documents_with_cp949_default(self):
+        self.original_open = Path.open
+        with patch.object(Path, 'open', lambda path, *args, **kwargs: self.cp949_default_open(path, *args, **kwargs)):
+            self.assertEqual(validate(Path(__file__).resolve().parents[2]), [])
+
+    def test_utf8_memory_and_manifest_with_cp949_default(self):
+        self.original_open = Path.open
+        with patch.object(Path, 'open', lambda path, *args, **kwargs: self.cp949_default_open(path, *args, **kwargs)):
+            path = self.write('docs/harness/evidence/test/log.txt', '검증 근거 🌱\n')
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            self.write('docs/harness/evidence/test/checksums.sha256', digest + '  log.txt\n')
+            self.write('ai/memory/test.md', '- 상태: confirmed\n[근거](../../docs/harness/evidence/test/log.txt)\n')
+            self.assertEqual(validate(self.root), [])
+
+    def test_filled_memory_template(self):
+        template = (Path(__file__).resolve().parents[1] / 'templates/memory.md').read_text(encoding='utf-8')
+        self.assertIn('- 기억 ID:\n- 상태: candidate / confirmed / stale', template)
+        for status in ('candidate', 'confirmed', 'stale'):
+            with self.subTest(status=status):
+                memory = template.replace('- 기억 ID:', '- 기억 ID: MEM-001')
+                memory = memory.replace('- 상태: candidate / confirmed / stale', '- 상태: ' + status)
+                memory = memory.replace('- 재현·해결·재검증 근거 링크:',
+                                        '- 재현·해결·재검증 근거 링크: [안내](../../docs/harness/README.md)')
+                self.write('ai/memory/test.md', memory)
+                self.assertEqual(validate(self.root), [])
 
     def test_valid_structure_and_links_with_spaces(self):
         self.write('docs/harness/근거 문서.md', '# 근거\n')
