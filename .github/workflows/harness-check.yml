@@ -1,0 +1,54 @@
+name: Harness checks
+
+on:
+    pull_request:
+        paths:
+            - 'AGENTS.md'
+            - 'ai/**'
+            - 'docs/harness/**'
+            - 'docs/conventions/git.md'
+            - '.github/workflows/harness-check.yml'
+    push:
+        branches: [main]
+        paths:
+            - 'AGENTS.md'
+            - 'ai/**'
+            - 'docs/harness/**'
+            - 'docs/conventions/git.md'
+            - '.github/workflows/harness-check.yml'
+
+permissions:
+    contents: read
+
+jobs:
+    harness:
+        name: Harness (${{ matrix.os }})
+        runs-on: ${{ matrix.os }}
+        timeout-minutes: 10
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [ubuntu-latest, windows-latest]
+        env:
+            PYTHONIOENCODING: utf-8
+        steps:
+            - uses: actions/checkout@v7
+            - name: Set up Python
+              uses: actions/setup-python@v7
+              with:
+                  python-version: '3.13'
+            - name: Log Python environment
+              run: python -B -c "import locale, sys; print(sys.version); print('default_encoding=' + locale.getencoding()); print('utf8_mode=' + str(sys.flags.utf8_mode))"
+            - name: Check harness structure
+              run: python -B ai/tests/check.py
+            - name: Run harness regression tests
+              run: python -B -m unittest discover -s ai/tests -p 'test_*.py' -v
+            - name: Log Windows environment with UTF-8 mode disabled
+              if: runner.os == 'Windows'
+              run: python -B -X utf8=0 -c "import locale, sys; print(sys.version); print('default_encoding=' + locale.getencoding()); print('utf8_mode=' + str(sys.flags.utf8_mode)); assert sys.flags.utf8_mode == 0"
+            - name: Check harness structure with UTF-8 mode disabled
+              if: runner.os == 'Windows'
+              run: python -B -X utf8=0 ai/tests/check.py
+            - name: Run harness regression tests with UTF-8 mode disabled
+              if: runner.os == 'Windows'
+              run: python -B -X utf8=0 -m unittest discover -s ai/tests -p 'test_*.py' -v
