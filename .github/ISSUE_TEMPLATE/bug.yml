@@ -1,0 +1,77 @@
+name: 버그 리포트
+description: 행사·예약·관리자 화면 또는 실행 환경의 오류 신고
+title: "[fix] "
+labels: ["bug"]
+body:
+  - type: checkboxes
+    id: duplicate-check
+    attributes:
+      label: 중복 이슈 확인
+      options:
+        - label: 동일한 문제가 이미 등록되어 있는지 기존 이슈를 검색했습니다.
+          required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: 현상
+      description: 문제가 발생한 기능과 실제 동작을 작성합니다.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 재현 방법
+      description: 동일한 문제를 확인할 수 있도록 순서와 입력값을 작성합니다.
+      placeholder: |
+        1. 문제가 발생하는 행사·예약·관리자 화면으로 이동
+        2. 수행한 동작과 입력값 작성
+        3. 발생한 오류 확인
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대 동작
+      description: 정상적으로 동작했을 때의 결과를 작성합니다.
+    validations:
+      required: true
+  - type: dropdown
+    id: browser
+    attributes:
+      label: 브라우저
+      description: 화면 오류가 발생한 브라우저를 선택합니다. 화면과 관련 없는 문제는 '해당 없음'을 선택합니다.
+      multiple: false
+      options:
+        - Chrome
+        - Safari
+        - Firefox
+        - Edge
+        - 해당 없음
+    validations:
+      required: false
+  - type: textarea
+    id: environment
+    attributes:
+      label: 실행 환경
+      description: 관련된 항목만 채우고, 해당하지 않는 행은 삭제합니다. alf.io 버전은 관리자 화면에서 확인할 수 있습니다.
+      value: |
+        | 항목 | 내용 |
+        |---|---|
+        | alf.io 버전 또는 커밋 | |
+        | OS·기기 | |
+        | 브라우저 버전 | |
+        | Java 버전 | |
+        | PostgreSQL 버전 | |
+        | Docker 버전 | |
+        | 실행·테스트 명령 | |
+  - type: textarea
+    id: logs
+    attributes:
+      label: 로그 / 오류 메시지
+      description: 비밀값과 참가자 개인정보를 제거한 관련 오류만 첨부합니다.
+      render: shell
+  - type: textarea
+    id: references
+    attributes:
+      label: 스크린샷 / 참고 자료
+      description: 문제를 확인할 수 있는 화면이나 관련 이슈·문서 링크를 첨부합니다.
