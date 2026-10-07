@@ -22,11 +22,13 @@ import alfio.config.Initializer;
 import alfio.controller.api.ControllerConfiguration;
 import alfio.manager.AdminReservationRequestManager;
 import alfio.manager.EventManager;
-import alfio.manager.payment.custom.offline.CustomOfflineConfigurationManager;
 import alfio.manager.payment.custom.offline.CustomOfflineConfigurationManager.CustomOfflinePaymentMethodAlreadyExistsException;
 import alfio.manager.payment.custom.offline.CustomOfflineConfigurationManager.CustomOfflinePaymentMethodDoesNotExistException;
+import alfio.manager.payment.custom.offline.CustomOfflineConfigurationManager;
+import alfio.manager.support.AccessDeniedException;
 import alfio.manager.user.UserManager;
 import alfio.model.Event;
+import alfio.model.PurchaseContextFieldConfiguration;
 import alfio.model.TicketCategory;
 import alfio.model.metadata.AlfioMetadata;
 import alfio.model.modification.AdminReservationModification;
@@ -35,6 +37,7 @@ import alfio.model.modification.TicketCategoryModification;
 import alfio.model.transaction.UserDefinedOfflinePaymentMethod;
 import alfio.repository.EventDeleterRepository;
 import alfio.repository.EventRepository;
+import alfio.repository.PurchaseContextFieldRepository;
 import alfio.repository.TicketCategoryRepository;
 import alfio.repository.TicketRepository;
 import alfio.repository.system.ConfigurationRepository;
@@ -43,9 +46,12 @@ import alfio.test.toolkit.PromoCodeDiscountIntegrationTestingToolkit;
 import alfio.test.util.AlfioIntegrationTest;
 import alfio.test.util.IntegrationTestUtil;
 import alfio.util.ClockProvider;
+
 import org.apache.commons.lang3.tuple.Pair;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -53,15 +59,25 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.Authentication;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
+import org.w3c.dom.Element;
 
+import tools.jackson.dataformat.csv.CsvMapper;
+import tools.jackson.dataformat.csv.CsvReadFeature;
+import tools.jackson.dataformat.csv.CsvSchema;
+
+import javax.xml.parsers.DocumentBuilderFactory;
+
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.ZipInputStream;
 
 import static alfio.controller.api.admin.EventApiController.FIXED_FIELDS;
 import static alfio.test.toolkit.PromoCodeDiscountIntegrationTestingToolkit.TEST_PROMO_CODE;
@@ -73,6 +89,8 @@ import static alfio.test.util.TestUtil.clockProvider;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 
 @AlfioIntegrationTest
@@ -107,11 +125,15 @@ class EventApiControllerIntegrationTest {
     @Autowired
     private CustomOfflineConfigurationManager customOfflineConfigurationManager;
 
+    @Autowired
+    private PurchaseContextFieldRepository purchaseContextFieldRepository;
+
     private Event event;
     private static final String TEST_ATTENDEE_EXTERNAL_REFERENCE = "123";
     private static final String TEST_ATTENDEE_USER_LANGUAGE = "en";
     private static final String TEST_ATTENDEE_FIRST_NAME = "Attendee";
     private static final String TEST_ATTENDEE_LAST_NAME = "Test";
+    private static final String TEST_RESERVATION_EMAIL = "integration-test@test.ch";
     private static final String TEST_ATTENDEE_EMAIL = "attendee@test.com";
 
     @Test
@@ -194,7 +216,120 @@ class EventApiControllerIntegrationTest {
         String expectedTestAttendeeCsvLine = "\""+foundTicket.getUuid()+"\""+",default,"+"\""+event.getShortName()+"\""+",ACQUIRED,0,0,0,0,"+"\""+foundTicket.getTicketsReservationId()+"\""+",\""+TEST_ATTENDEE_FIRST_NAME+" "+TEST_ATTENDEE_LAST_NAME+"\","+TEST_ATTENDEE_FIRST_NAME+","+TEST_ATTENDEE_LAST_NAME+","+TEST_ATTENDEE_EMAIL+",false,"+TEST_ATTENDEE_USER_LANGUAGE;
         String returnedCsvContent = mockResponse.getContentAsString().trim().replace("\uFEFF", ""); // remove BOM
         assertTrue(returnedCsvContent.startsWith(getExpectedHeaderCsvLine() + "\n" + expectedTestAttendeeCsvLine));
-        assertTrue(returnedCsvContent.endsWith("\"Billing Address\",,"+TEST_PROMO_CODE+",,," + TEST_ATTENDEE_EXTERNAL_REFERENCE));
+        assertTrue(returnedCsvContent.endsWith("\"Billing Address\",,"+TEST_PROMO_CODE+",,," + TEST_ATTENDEE_EXTERNAL_REFERENCE + "," + TEST_RESERVATION_EMAIL));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"csv", "excel"})
+    void exportIncludesReservationEmailForEachTicketAndCustomFields(String format) throws Exception {
+        var principal = createConfirmedReservationWithTwoAttendees();
+        var fieldId = purchaseContextFieldRepository.insertConfiguration(event.getId(), event.getOrganizationId(), null,
+            "Company", 0, "text", null, 100, 0, false, PurchaseContextFieldConfiguration.Context.ATTENDEE,
+            -1, null, false).getKey();
+        var tickets = ticketRepository.findAllConfirmedForCSV(event.getId());
+        for (var ticket : tickets) {
+            purchaseContextFieldRepository.insertValue(ticket.getTicket().getId(), null, event.getOrganizationId(), fieldId,
+                "Example Company", PurchaseContextFieldConfiguration.Context.ATTENDEE);
+        }
+        var fields = List.of("ID", "Full Name", "E-Mail", "Reservation E-Mail", "custom:Company");
+        var response = downloadAttendees(format, fields, principal);
+        var rows = readExportRows(format, response);
+        assertEquals(List.of("ID", "Full Name", "E-Mail", "Reservation E-Mail", "Company"), rows.getFirst());
+        assertEquals(3, rows.size());
+        assertEquals(1, tickets.stream().map(t -> t.getTicket().getTicketsReservationId()).distinct().count());
+        for (int i = 1; i < rows.size(); i++) {
+            assertEquals(List.of(tickets.get(i - 1).getTicket().getUuid(), TEST_ATTENDEE_FIRST_NAME + " " + TEST_ATTENDEE_LAST_NAME,
+                TEST_ATTENDEE_EMAIL, TEST_RESERVATION_EMAIL, "Example Company"), rows.get(i));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"csv", "excel"})
+    void exportKeepsLegacySelectionWithoutReservationEmail(String format) throws Exception {
+        var principal = createConfirmedReservationWithTwoAttendees();
+        var rows = readExportRows(format, downloadAttendees(format, List.of("E-Mail"), principal));
+        assertEquals(List.of("E-Mail"), rows.getFirst());
+        assertEquals(3, rows.size());
+        rows.stream().skip(1).forEach(row -> assertEquals(List.of(TEST_ATTENDEE_EMAIL), row));
+    }
+
+    @Test
+    void exportFieldsIncludeSeparateReservationEmail() {
+        var eventAndUser = createEvent(Event.EventFormat.HYBRID);
+        event = eventAndUser.getKey();
+        var fields = eventApiController.getAllFields(event.getShortName(), () -> owner(eventAndUser.getValue()));
+        assertTrue(fields.stream().anyMatch(field -> field.getKey().equals("Reservation E-Mail") && field.getValue().equals("Reservation E-Mail")));
+        assertTrue(fields.stream().anyMatch(field -> field.getKey().equals("E-Mail")));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"csv", "excel"})
+    void exportRejectsUnauthorizedUserBeforeWritingData(String format) {
+        var eventAndUser = createEvent(Event.EventFormat.HYBRID);
+        event = eventAndUser.getKey();
+        var request = new MockHttpServletRequest();
+        request.addParameter("fields", "Reservation E-Mail");
+        var response = new MockHttpServletResponse();
+        assertThrows(AccessDeniedException.class, () -> eventApiController.downloadAllTicketsCSV(event.getShortName(), format,
+            request, response, () -> "unknown-export-user"));
+        assertEquals(0, response.getContentAsByteArray().length);
+        assertFalse(response.containsHeader("Content-Disposition"));
+    }
+
+    private Authentication createConfirmedReservationWithTwoAttendees() {
+        var eventAndUser = createEvent(Event.EventFormat.HYBRID);
+        event = eventAndUser.getKey();
+        var principal = Mockito.mock(Authentication.class);
+        when(principal.getName()).thenReturn(owner(eventAndUser.getValue()));
+        var modification = getTestAdminReservationModification();
+        var category = modification.getTicketsInfo().getFirst().getCategory();
+        var twoAttendees = new AdminReservationModification(modification.getExpiration(), modification.getCustomerData(),
+            List.of(new AdminReservationModification.TicketsInfo(category, List.of(generateTestAttendee(), new AdminReservationModification.Attendee(null, TEST_ATTENDEE_FIRST_NAME, TEST_ATTENDEE_LAST_NAME,
+                TEST_ATTENDEE_EMAIL, TEST_ATTENDEE_USER_LANGUAGE, false, "456", null, Collections.emptyMap(), null)), true, false)),
+            "en", false, false, null, null, null, null);
+        var result = attendeeBulkImportApiController.createReservations(event.getShortName(), twoAttendees, false, principal);
+        assertTrue(result.isSuccess());
+        adminReservationRequestManager.processPendingReservations();
+        assertEquals(2, ticketRepository.findAllConfirmedForCSV(event.getId()).size());
+        return principal;
+    }
+
+    private MockHttpServletResponse downloadAttendees(String format, List<String> fields, Authentication principal) throws IOException {
+        var request = new MockHttpServletRequest();
+        request.addParameter("fields", fields.toArray(String[]::new));
+        var response = new MockHttpServletResponse();
+        eventApiController.downloadAllTicketsCSV(event.getShortName(), format, request, response, principal);
+        return response;
+    }
+
+    private List<List<String>> readExportRows(String format, MockHttpServletResponse response) throws Exception {
+        if ("csv".equals(format)) {
+            assertEquals("text/csv;charset=UTF-8", response.getContentType());
+            var content = response.getContentAsString().replace("\uFEFF", "");
+            return new CsvMapper().readerForListOf(String.class).with(CsvSchema.emptySchema()).with(CsvReadFeature.WRAP_AS_ARRAY).<List<String>>readValues(content).readAll();
+        }
+        assertEquals("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", response.getContentType());
+        try (var zip = new ZipInputStream(new ByteArrayInputStream(response.getContentAsByteArray()))) {
+            for (var entry = zip.getNextEntry(); entry != null; entry = zip.getNextEntry()) {
+                if (entry.getName().equals("xl/worksheets/sheet1.xml")) {
+                    var factory = DocumentBuilderFactory.newInstance();
+                    factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+                    var document = factory.newDocumentBuilder().parse(new ByteArrayInputStream(zip.readAllBytes()));
+                    var rows = new ArrayList<List<String>>();
+                    var elements = document.getElementsByTagName("row");
+                    for (int i = 0; i < elements.getLength(); i++) {
+                        var cells = ((Element) elements.item(i)).getElementsByTagName("t");
+                        var values = new ArrayList<String>();
+                        for (int j = 0; j < cells.getLength(); j++) {
+                            values.add(cells.item(j).getTextContent());
+                        }
+                        rows.add(values);
+                    }
+                    return rows;
+                }
+            }
+        }
+        throw new AssertionError("Excel worksheet missing");
     }
 
     @Test
@@ -315,7 +450,7 @@ class EventApiControllerIntegrationTest {
 
     private AdminReservationModification getTestAdminReservationModification() {
         DateTimeModification expiration = DateTimeModification.fromZonedDateTime(ZonedDateTime.now(ClockProvider.clock()).plusDays(1));
-        AdminReservationModification.CustomerData customerData = new AdminReservationModification.CustomerData("Integration", "Test", "integration-test@test.ch", "Billing Address", "reference", "en", "1234", "CH", null);
+        AdminReservationModification.CustomerData customerData = new AdminReservationModification.CustomerData("Integration", "Test", TEST_RESERVATION_EMAIL, "Billing Address", "reference", "en", "1234", "CH", null);
         var ticketCategoryList = this.ticketCategoryRepository.findAllTicketCategories(event.getId());
         AdminReservationModification.Category category = new AdminReservationModification.Category(ticketCategoryList.getFirst().getId(), "name", new BigDecimal("100.00"), null);
         List<AdminReservationModification.TicketsInfo> ticketsInfoList = Collections.singletonList(new AdminReservationModification.TicketsInfo(category, Collections.singletonList(generateTestAttendee()), true, false));
@@ -345,6 +480,7 @@ class EventApiControllerIntegrationTest {
         expectedHeaderCsvLine = expectedHeaderCsvLine.replaceAll("Payment ID", "\"Payment ID\"");
         expectedHeaderCsvLine = expectedHeaderCsvLine.replaceAll("Payment Method", "\"Payment Method\"");
         expectedHeaderCsvLine = expectedHeaderCsvLine.replaceAll("External Reference", "\"External Reference\"");
+        expectedHeaderCsvLine = expectedHeaderCsvLine.replaceAll("Reservation E-Mail", "\"Reservation E-Mail\"");
         return expectedHeaderCsvLine;
     }
 
