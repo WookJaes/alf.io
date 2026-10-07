@@ -101,3 +101,14 @@ frontend/public:
 - 자체 리뷰: 오류 코드별 인자 적용, 숫자 형식 확인, 기존 errors 호환성, 쿼리 순서에 독립적인 테스트, 오류 시 예약 미생성 확인. 최종 제품 코드·실행 설정은 위 검증 이후 변경하지 않음. 독립 리뷰 미실행.
 - 남은 범위: 전체 제품 테스트·PostgreSQL 15/17·전체 E2E 자동화·원격 CI 미실행. 하네스 구조·공백 검사도 기록 정리 후 확인한다.
 - 최종 처리: 사용자 승인대로 백엔드·프론트·회귀 테스트·이 기록을 함께 로컬 커밋한다. 원본 로그·결과 JSON은 저장소에 추가하지 않으며 PR 생성·푸시·노션 갱신 없음.
+
+## PR #8 CI 실패 대응 — 2026-10-07
+
+- 요청·범위: PR의 실패 원인을 수정·검증·기록하고 커밋·푸시한다. 기준 커밋 47f821869. PR 본문은 수정하지 않는다.
+- 실패: [push 실행](https://github.com/WookJaes/alf.io/actions/runs/37635014036)과 [PR 실행](https://github.com/WookJaes/alf.io/actions/runs/37635044749)의 build(17)에서 TestCheckRestApiStability 실패. 각각 테스트 849건 집계 중 실패 1·스킵 2, Gradle 종료 코드 1. 행렬의 build(15/16)는 fail-fast로 취소됐으며 해당 환경의 실패로 단정하지 않는다. CodeQL·하네스 Linux/Windows는 성공.
+- 원인: 선택적 qty를 API에 추가했으나 src/test/resources/api/descriptor.json의 기준 명세에 반영하지 않았다. 검사 결과는 하위 호환으로 판단했지만 검사기는 isDifferent이면 실패한다. 최초 로컬 관련 테스트 선정에서 API 명세 검사를 놓쳤다.
+- 수정: 기준 명세의 GET /api/v2/public/event/{eventName}/code/{code}에 qty(query·선택적·string)만 추가. 다른 명세 항목은 구조 비교로 변경 없음을 확인. 검사 로직·실패 조건·제품 코드 변경 없음. API 변경 작업의 필수 검증에 TestCheckRestApiStability와 전체 CI 명령을 연결하는 하네스 개선 후보로 기록한다.
+- 실제 재검증 명령: `./gradlew build distribution jacocoTestReport -Dpgsql.version=17 --no-daemon` (저장소 루트, 기존 Java·Gradle·Docker 환경). 종료 코드 0, BUILD SUCCESSFUL, 2분 43초. build·distribution·jacocoTestReport 성공. 테스트 태스크 실제 실행, 캐시 컴파일은 새 컴파일로 계산하지 않음.
+- 실제 건수: 전체 849건 집계, 통과 847건·실패 0·오류 0·스킵 2건. TestCheckRestApiStability 1건 통과. 스킵 항목은 NormalFlowE2ETest와 MigrationValidatorTest의 환경 의존 검사이며 통과로 계산하지 않음. API 명세 검사 포함 전체 제품 검증을 이번 실행에서 보완했다.
+- 자체 리뷰·확인: JSON 구조 비교에서 의도한 선택적 qty 외 변경 없음. 하네스 구조·diff 공백 검사 통과. 사용자 승인대로 기준 명세와 이 기록만 커밋·푸시한다. 수정 후 원격 CI 결과는 후속 확인이며 PR 본문은 보존한다.
+- 기록 방식: 원본 로그는 추가하지 않고 실제 명령·결과·원인·조치를 요약한다.
