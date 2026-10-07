@@ -318,6 +318,11 @@ public class EventApiV2Controller {
         Function<Pair<Optional<String>, BindingResult>, Optional<String>> handleErrors = (res) -> {
             if (res.getRight().hasErrors()) {
                 queryStrings.put("errors", res.getRight().getAllErrors().stream().map(DefaultMessageSourceResolvable::getCode).collect(Collectors.joining(",")));
+                res.getRight().getAllErrors().stream()
+                    .filter(error -> ErrorsCode.STEP_1_OVER_MAXIMUM.equals(error.getCode()))
+                    .filter(error -> error.getArguments() != null && error.getArguments().length > 0)
+                    .findFirst()
+                    .ifPresent(error -> queryStrings.put("maxTickets", String.valueOf(error.getArguments()[0])));
             }
             return res.getLeft();
         };

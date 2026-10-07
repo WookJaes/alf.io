@@ -43,6 +43,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -141,7 +142,16 @@ class ReservationFlowIntegrationTest extends BaseReservationFlowTest {
             var category = ticketCategoryRepository.findCodeInEvent(event.getId(), "PUBLIC_CODE").orElseThrow();
             configurationRepository.insertTicketCategoryLevel(event.getOrganizationId(), event.getId(), category.getId(), key, "2", "");
         }
-        assertDirectLinkError(context, "3", ErrorsCode.STEP_1_OVER_MAXIMUM);
+        var result = directLinkMvc().perform(get("/api/v2/public/event/{event}/code/PUBLIC_CODE", event.getShortName()).param("qty", "3"))
+            .andExpect(status().isTemporaryRedirect())
+            .andReturn();
+        var location = result.getResponse().getHeader("Location");
+        assertNotNull(location);
+        var redirect = UriComponentsBuilder.fromUriString(location).build();
+        assertEquals("/event/" + event.getShortName(), redirect.getPath());
+        assertEquals(ErrorsCode.STEP_1_OVER_MAXIMUM, redirect.getQueryParams().getFirst("errors"));
+        assertEquals("2", redirect.getQueryParams().getFirst("maxTickets"));
+        assertNoDirectLinkReservation(context);
     }
 
     @Test
@@ -156,6 +166,10 @@ class ReservationFlowIntegrationTest extends BaseReservationFlowTest {
         directLinkMvc().perform(get("/api/v2/public/event/{event}/code/PUBLIC_CODE", context.event.getShortName()).param("qty", quantity))
             .andExpect(status().isTemporaryRedirect())
             .andExpect(redirectedUrl("/event/" + context.event.getShortName() + "?errors=" + error));
+        assertNoDirectLinkReservation(context);
+    }
+
+    private void assertNoDirectLinkReservation(ReservationFlowContext context) {
         assertEquals(0, jdbcTemplate.queryForObject("select count(*) from tickets_reservation where event_id_fk = :eventId", Map.of("eventId", context.event.getId()), Integer.class));
         assertEquals(0, jdbcTemplate.queryForObject("select count(*) from ticket where event_id = :eventId and tickets_reservation_id is not null", Map.of("eventId", context.event.getId()), Integer.class));
     }

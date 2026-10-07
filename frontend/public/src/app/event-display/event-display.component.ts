@@ -88,7 +88,15 @@ export class EventDisplayComponent implements OnInit, OnDestroy {
     const code = this.route.snapshot.queryParams['code'];
     const errors = this.route.snapshot.queryParams['errors'];
     if (errors) {
-      this.globalErrors = errors.split(',').map(val => { const ed = new ErrorDescriptor(); ed.code = val; return ed; });
+      const maxTickets = this.route.snapshot.queryParams['maxTickets'];
+      this.globalErrors = errors.split(',').map(val => {
+        const ed = new ErrorDescriptor();
+        ed.code = val;
+        if (val === 'error.STEP_1_OVER_MAXIMUM' && /^\d+$/.test(maxTickets)) {
+          ed.arguments = {'0': maxTickets};
+        }
+        return ed;
+      });
     }
 
     this.route.params.subscribe(params => {
