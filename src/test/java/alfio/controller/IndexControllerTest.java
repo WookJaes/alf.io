@@ -30,6 +30,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.context.MessageSource;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.context.request.ServletWebRequest;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
@@ -43,8 +44,23 @@ import static alfio.test.util.TestUtil.FIXED_TIME_CLOCK;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 
 class IndexControllerTest {
+
+    @Test
+    void directReservationLinkForwardsQuantity() throws Exception {
+        var mvc = MockMvcBuilders.standaloneSetup(new IndexController(null, null, null, null)).build();
+        mvc.perform(get("/e/example/c/PUBLIC").param("qty", "3"))
+            .andExpect(redirectedUrl("/api/v2/public/event/example/code/PUBLIC?qty=3"));
+        mvc.perform(get("/event/example/code/PUBLIC"))
+            .andExpect(redirectedUrl("/api/v2/public/event/example/code/PUBLIC"));
+        mvc.perform(get("/e/example/c/PUBLIC").param("qty", "3&code=OTHER"))
+            .andExpect(redirectedUrl("/api/v2/public/event/example/code/PUBLIC?qty=3%26code%3DOTHER"));
+        mvc.perform(get("/e/example/c/PUBLIC").param("qty", "3").header("User-Agent", "Slackbot"))
+            .andExpect(redirectedUrl("/event/example"));
+    }
 
     private EventLoader eventLoader;
     private Element head;

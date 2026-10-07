@@ -309,18 +309,25 @@ public class EventApiV2Controller {
     }
 
     @GetMapping("event/{eventName}/code/{code}")
-    public ResponseEntity<Void> handleCode(@PathVariable String eventName, @PathVariable String code, ServletWebRequest request, Principal principal) {
+    public ResponseEntity<Void> handleCode(@PathVariable String eventName, @PathVariable String code,
+                                         @RequestParam(value = "qty", required = false) String quantity,
+                                         ServletWebRequest request, Principal principal) {
         String trimmedCode = StringUtils.trimToNull(code);
         Map<String, String> queryStrings = new HashMap<>();
 
         Function<Pair<Optional<String>, BindingResult>, Optional<String>> handleErrors = (res) -> {
             if (res.getRight().hasErrors()) {
                 queryStrings.put("errors", res.getRight().getAllErrors().stream().map(DefaultMessageSourceResolvable::getCode).collect(Collectors.joining(",")));
+                res.getRight().getAllErrors().stream()
+                    .filter(error -> ErrorsCode.STEP_1_OVER_MAXIMUM.equals(error.getCode()))
+                    .filter(error -> error.getArguments() != null && error.getArguments().length > 0)
+                    .findFirst()
+                    .ifPresent(error -> queryStrings.put("maxTickets", String.valueOf(error.getArguments()[0])));
             }
             return res.getLeft();
         };
 
-        var url = promoCodeRequestManager.createReservationFromPromoCode(eventName, trimmedCode, queryStrings::put, handleErrors, request, principal).map(reservationId ->
+        var url = promoCodeRequestManager.createReservationFromPromoCode(eventName, trimmedCode, quantity, queryStrings::put, handleErrors, request, principal).map(reservationId ->
             UriComponentsBuilder.fromPath("/event/{eventShortName}/reservation/{reservationId}/book")
                 .build(Map.of("eventShortName", eventName, "reservationId", reservationId))
                 .toString())

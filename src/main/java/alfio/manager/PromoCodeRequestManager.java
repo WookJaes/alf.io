@@ -70,6 +70,7 @@ public class PromoCodeRequestManager {
 
     public Optional<String> createReservationFromPromoCode(String eventName,
                                                            String code,
+                                                           String quantity,
                                                            BiConsumer<String, String> queryStringHandler,
                                                            Function<Pair<Optional<String>, BindingResult>, Optional<String>> handleErrors,
                                                            ServletWebRequest request,
@@ -95,7 +96,7 @@ public class PromoCodeRequestManager {
             } else if(codeType == PromoCodeType.TICKET_CATEGORY_CODE) {
                 var category = ticketCategoryRepository.findCodeInEvent(e.getId(), trimmedCode).orElseThrow();
                 if(!category.isAccessRestricted()) {
-                    var res = makeSimpleReservation(e, category.getId(), trimmedCode, request, maybePromoCodeDiscount, principal);
+                    var res = makeSimpleReservation(e, category.getId(), trimmedCode, quantity, request, maybePromoCodeDiscount, principal);
                     return handleErrors.apply(res);
                 } else {
                     var specialPrice = specialPriceRepository.findActiveNotAssignedByCategoryId(category.getId(), 1).stream().findFirst();
@@ -103,12 +104,12 @@ public class PromoCodeRequestManager {
                         queryStringHandler.accept("errors", ErrorsCode.STEP_1_CODE_NOT_FOUND);
                         return Optional.empty();
                     }
-                    var res = makeSimpleReservation(e, category.getId(), specialPrice.get().getCode(), request, maybePromoCodeDiscount, principal);
+                    var res = makeSimpleReservation(e, category.getId(), specialPrice.get().getCode(), null, request, maybePromoCodeDiscount, principal);
                     return handleErrors.apply(res);
                 }
             } else if (checkedCode.isSuccess() && codeType == PromoCodeType.SPECIAL_PRICE) {
                 int ticketCategoryId = specialPriceRepository.getByCode(trimmedCode).orElseThrow().getTicketCategoryId();
-                var res = makeSimpleReservation(e, ticketCategoryId, trimmedCode, request, maybePromoCodeDiscount, principal);
+                var res = makeSimpleReservation(e, ticketCategoryId, trimmedCode, null, request, maybePromoCodeDiscount, principal);
                 return handleErrors.apply(res);
             } else {
                 queryStringHandler.accept("errors", ErrorsCode.STEP_1_CODE_NOT_FOUND);
@@ -188,6 +189,7 @@ public class PromoCodeRequestManager {
     private Pair<Optional<String>, BindingResult> makeSimpleReservation(Event event,
                                                                         int ticketCategoryId,
                                                                         String promoCode,
+                                                                        String quantity,
                                                                         ServletWebRequest request,
                                                                         Optional<PromoCodeDiscount> promoCodeDiscount,
                                                                         Principal principal) {
@@ -195,11 +197,22 @@ public class PromoCodeRequestManager {
         Locale locale = RequestUtils.getMatchingLocale(request, event);
         ReservationForm form = new ReservationForm();
         form.setPromoCode(promoCode);
+        var bindingRes = new BeanPropertyBindingResult(form, "reservationForm");
+        int requestedQuantity;
+        try {
+            requestedQuantity = quantity == null ? 1 : Integer.parseInt(quantity);
+        } catch (NumberFormatException e) {
+            bindingRes.reject(ErrorsCode.STEP_1_SELECT_AT_LEAST_ONE);
+            return Pair.of(Optional.empty(), bindingRes);
+        }
+        if (requestedQuantity <= 0) {
+            bindingRes.reject(ErrorsCode.STEP_1_SELECT_AT_LEAST_ONE);
+            return Pair.of(Optional.empty(), bindingRes);
+        }
         TicketReservationModification reservation = new TicketReservationModification();
-        reservation.setQuantity(1);
+        reservation.setQuantity(requestedQuantity);
         reservation.setTicketCategoryId(ticketCategoryId);
         form.setReservation(Collections.singletonList(reservation));
-        var bindingRes = new BeanPropertyBindingResult(form, "reservationForm");
         return Pair.of(createTicketReservation(form, bindingRes, event, locale, promoCodeDiscount.map(PromoCodeDiscount::getPromoCode), principal), bindingRes);
     }
 

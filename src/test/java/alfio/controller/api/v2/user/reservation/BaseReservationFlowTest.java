@@ -404,10 +404,10 @@ public abstract class BaseReservationFlowTest extends BaseIntegrationTest {
         }
 
 
-        assertEquals("redirect:/api/v2/public/event/" + context.event.getShortName() + "/code/MY_CODE", indexController.redirectCode(context.event.getShortName(), "MY_CODE", "Normal user agent"));
+        assertEquals("redirect:/api/v2/public/event/" + context.event.getShortName() + "/code/MY_CODE", indexController.redirectCode(context.event.getShortName(), "MY_CODE", null, "Normal user agent"));
 
         // vv social preview should redirect to event page when linking a code page instead of following and creating a reservation
-        assertEquals("redirect:/event/" + context.event.getShortName(), indexController.redirectCode(context.event.getShortName(), "MY_CODE", "Slackbot"));
+        assertEquals("redirect:/event/" + context.event.getShortName(), indexController.redirectCode(context.event.getShortName(), "MY_CODE", "3", "Slackbot"));
 
 
         // check open graph & co
@@ -599,20 +599,20 @@ public abstract class BaseReservationFlowTest extends BaseIntegrationTest {
         {
 
             // code not found
-            var notFoundRes = eventApiV2Controller.handleCode(context.event.getShortName(), "NOT_EXIST", new ServletWebRequest(new MockHttpServletRequest(), new MockHttpServletResponse()), context.getPublicUser());
+            var notFoundRes = eventApiV2Controller.handleCode(context.event.getShortName(), "NOT_EXIST", null, new ServletWebRequest(new MockHttpServletRequest(), new MockHttpServletResponse()), context.getPublicUser());
             assertEquals("/event/" + context.event.getShortName(), notFoundRes.getHeaders().getLocation().getPath());
             assertEquals("errors=error.STEP_1_CODE_NOT_FOUND", notFoundRes.getHeaders().getLocation().getQuery());
             //
 
             // promo code, we expect a redirect to event with the code in the query string
-            var redirectPromoCodeRes = eventApiV2Controller.handleCode(context.event.getShortName(), PROMO_CODE, new ServletWebRequest(new MockHttpServletRequest(), new MockHttpServletResponse()), context.getPublicUser());
+            var redirectPromoCodeRes = eventApiV2Controller.handleCode(context.event.getShortName(), PROMO_CODE, null, new ServletWebRequest(new MockHttpServletRequest(), new MockHttpServletResponse()), context.getPublicUser());
             assertEquals("/event/" + context.event.getShortName(), redirectPromoCodeRes.getHeaders().getLocation().getPath());
             assertEquals("code=MYPROMOCODE", redirectPromoCodeRes.getHeaders().getLocation().getQuery());
 
 
             // code existing
             assertEquals(2, specialPriceRepository.countFreeTokens(hiddenCategoryId).intValue());
-            var res = eventApiV2Controller.handleCode(context.event.getShortName(), URL_CODE_HIDDEN, new ServletWebRequest(new MockHttpServletRequest(), new MockHttpServletResponse()), context.getPublicUser());
+            var res = eventApiV2Controller.handleCode(context.event.getShortName(), URL_CODE_HIDDEN, null, new ServletWebRequest(new MockHttpServletRequest(), new MockHttpServletResponse()), context.getPublicUser());
             var location = requireNonNull(res.getHeaders().getLocation()).toString();
             var reservationId = location.substring(("/event/" + context.event.getShortName() + "/reservation/").length(), location.length() - "/book".length());
             var reservationInfo = reservationApiV2Controller.getReservationInfo(reservationId, context.getPublicUser());
@@ -634,7 +634,7 @@ public abstract class BaseReservationFlowTest extends BaseIntegrationTest {
         {
 
             assertEquals(2, specialPriceRepository.countFreeTokens(hiddenCategoryId).intValue());
-            var res = eventApiV2Controller.handleCode(context.event.getShortName(), URL_CODE_HIDDEN, new ServletWebRequest(new MockHttpServletRequest(), new MockHttpServletResponse()), context.getPublicUser());
+            var res = eventApiV2Controller.handleCode(context.event.getShortName(), URL_CODE_HIDDEN, null, new ServletWebRequest(new MockHttpServletRequest(), new MockHttpServletResponse()), context.getPublicUser());
             var location = requireNonNull(res.getHeaders().getLocation()).toString();
             var reservationId = location.substring(("/event/" + context.event.getShortName() + "/reservation/").length(), location.length() - "/book".length());
             var reservationInfo = reservationApiV2Controller.getReservationInfo(reservationId, context.getPublicUser());
