@@ -309,7 +309,9 @@ public class EventApiV2Controller {
     }
 
     @GetMapping("event/{eventName}/code/{code}")
-    public ResponseEntity<Void> handleCode(@PathVariable String eventName, @PathVariable String code, ServletWebRequest request, Principal principal) {
+    public ResponseEntity<Void> handleCode(@PathVariable String eventName, @PathVariable String code,
+                                         @RequestParam(value = "qty", required = false) String quantity,
+                                         ServletWebRequest request, Principal principal) {
         String trimmedCode = StringUtils.trimToNull(code);
         Map<String, String> queryStrings = new HashMap<>();
 
@@ -320,7 +322,7 @@ public class EventApiV2Controller {
             return res.getLeft();
         };
 
-        var url = promoCodeRequestManager.createReservationFromPromoCode(eventName, trimmedCode, queryStrings::put, handleErrors, request, principal).map(reservationId ->
+        var url = promoCodeRequestManager.createReservationFromPromoCode(eventName, trimmedCode, quantity, queryStrings::put, handleErrors, request, principal).map(reservationId ->
             UriComponentsBuilder.fromPath("/event/{eventShortName}/reservation/{reservationId}/book")
                 .build(Map.of("eventShortName", eventName, "reservationId", reservationId))
                 .toString())

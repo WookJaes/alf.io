@@ -242,14 +242,19 @@ public class IndexController {
         "/e/{eventShortName}/c/{code}"})
     public String redirectCode(@PathVariable(EVENT_SHORT_NAME) String eventName,
                                @PathVariable String code,
+                               @RequestParam(value = "qty", required = false) String quantity,
                                @RequestHeader(value = "User-Agent", required = false) String userAgent) {
 
         if (RequestUtils.isSocialMediaShareUA(userAgent)) {
             return REDIRECT + UriComponentsBuilder.fromPath("/event/{eventShortName}").build(Map.of(EVENT_SHORT_NAME, eventName));
         }
 
-        return REDIRECT + UriComponentsBuilder.fromPath("/api/v2/public/event/{eventShortName}/code/{code}")
-            .build(Map.of(EVENT_SHORT_NAME, eventName, "code", code));
+        var redirect = UriComponentsBuilder.fromPath("/api/v2/public/event/{eventShortName}/code/{code}");
+        if (quantity != null) {
+            redirect.queryParam("qty", "{quantity}");
+            return REDIRECT + redirect.build(Map.of(EVENT_SHORT_NAME, eventName, "code", code, "quantity", quantity));
+        }
+        return REDIRECT + redirect.build(Map.of(EVENT_SHORT_NAME, eventName, "code", code));
     }
 
     @GetMapping("/e/{eventShortName}")
