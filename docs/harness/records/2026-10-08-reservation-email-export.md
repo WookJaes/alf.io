@@ -42,7 +42,7 @@
 
 - 자체 리뷰: diff·이슈 완료 조건·기존 관리자 필드 선택 흐름·조회·권한 검사·실제 파일 응답을 대조했다. 예약자 이메일은 참석자 이메일 대신 덮어쓰지 않고 별도 선택 항목으로 제공한다. 고정 항목·이탈리아 전자 청구 항목·추가 항목의 기존 생성 순서를 유지한다.
 - 관련 기억: 이번 변경에는 이전 실패와 같은 제품 원인이 없으므로 기억 인덱스는 조회하지 않았다. 이전 API 명세 누락 사례를 고려해 관련 검증에 명세 검사를 포함했다.
-- 미실행: 실제 브라우저 조작·프론트 단위 테스트·전체 E2E 완료 검증·원격 CI. 프론트 소스 변경 없이 기존 동적 항목 목록을 사용한다. 화면 검증으로 주장하지 않고 항목 목록과 실제 다운로드 응답 검증으로 구분한다.
+- 최초 커밋 당시 미실행: 실제 브라우저 조작·프론트 단위 테스트·전체 E2E 완료 검증·원격 CI. 브라우저 검증은 아래 후속 절에서 완료했다. 프론트 소스 변경 없이 기존 동적 항목 목록을 사용한다. 화면 검증으로 주장하지 않고 항목 목록과 실제 다운로드 응답 검증으로 구분한다.
 - 보안·데이터: 합성 이메일·행사·참석자 데이터만 사용. 실제 사용자 DB 변경·메일 발송·원본 로그 커밋 없음.
 - 최종 제품 빌드 결과와 커밋 전 확인은 아래에 추가한다. 푸시·PR 생성·노션 기록은 이번 요청 범위에 포함되지 않는다.
 
@@ -62,3 +62,24 @@
 - 검증 대상 SHA-256: EventApiController.java `251ce2b42cf2e088ff01ab3072ef2e06123db94f56e4965493cd5e60bd1674dd`, EventApiControllerIntegrationTest.java `88457d6a080cad36723127e4c43286c4c0cf9c169cccb4ab589de5db6d6a1400`. 최종 검증 이후 제품·테스트·실행 설정 변경 없음. 기록 문서만 정리했다.
 - 하네스 구조 검사: `python3 -B ai/tests/check.py` 종료 코드 0. 공백 검사 `git diff --check` 종료 코드 0. 문서 상대 링크·최종 4개 파일·비밀값 패턴과 diff 자체 리뷰 완료. 하네스 실행 로직 변경이 없어 하네스 도구 회귀는 반복하지 않았다.
 - 처리: 사용자 승인에 따라 제품 코드·통합 테스트·사용 안내·이 기록을 하나의 로컬 Conventional Commit에 포함한다. 원본 로그·실제 고객 데이터·새 의존성·DB 마이그레이션 없음. 푸시·PR 생성·노션 갱신 없음.
+
+
+## PR 생성 전 실제 브라우저 검증 — 2026-10-08
+
+- 요청·대상: 사용자 요청에 따라 로컬 관리자 화면의 항목 표시·CSV·Excel 직접 다운로드를 검증했다. 제품 기준 커밋 9d717ab9f, feat/9-reservation-email-export, 시작 작업 트리 깨끗함. 제품·테스트 변경 없음.
+- 환경·명령: 기존 검증 전용 PostgreSQL 16 컨테이너 alfio-issue7-browser-db(localhost:15437, alfio_issue7)를 재사용했다. `./gradlew -I /private/tmp/alfio-issue7-browser.gradle bootRun --no-daemon -x frontendBuild -x frontendPnpmInstall -x frontendAdminPnpmInstall`로 localhost:8087·dev/demo/disable-jobs 실행. 시작 성공, 앱은 실행 상태이므로 종료 코드 0 테스트로 표기하지 않는다. 프론트는 기존 빌드 결과 사용.
+- 합성 데이터: 기존 issue7-local 합성 행사에 관리자 화면으로 예약 1건·참석자 2명을 추가하고 무료 예약을 Mark as Completed로 확정했다. 예약자와 두 참석자는 서로 다른 example.test 이메일을 사용했다. 예약 화면에서 COMPLETE·티켓 2장·Emails sent 0 확인. 기존 테스트 예약은 수정하지 않았고 실제 결제·외부 메일·사용자 DB 변경 없음.
+
+| 화면·다운로드 검증 | 실제 결과 |
+|---|---|
+| 관리자 항목 표시 | Download → attendees' data 대화상자에서 E-Mail과 Reservation E-Mail이 별도 체크박스로 표시·선택됨 |
+| CSV 직접 다운로드 | ReservationID·Full Name·E-Mail·Reservation E-Mail 선택 후 csv·download 버튼 클릭. issue7-local-export.csv 생성, 267바이트. 헤더와 티켓 2행 파싱·검증 |
+| Excel 직접 다운로드 | 같은 선택으로 Excel·download 버튼 클릭. issue7-local-export.xlsx 생성, 2,839바이트. XLSX ZIP의 실제 worksheet XML 파싱·검증 |
+| 이메일·예약 대응 | 두 파일의 값이 동일함. 참석자 이메일 2개는 각 행에 구분되고, 예약 ID·예약자 이메일은 두 행에 동일하게 출력됨 |
+| 기존 선택 유지 | Deselect all → E-Mail만 선택해 CSV 재다운로드. 헤더 E-Mail 하나와 참석자 2행만 출력, 예약자 이메일 열 없음 |
+
+- 파일 확인: Python 표준 csv·zipfile·xml.etree로 브라우저가 Downloads에 저장한 실제 파일을 읽고 헤더·행 수·이메일·예약 대응·CSV/Excel 일치를 assert로 확인했다. 두 검사 명령 모두 종료 코드 0. 자동 통합 테스트의 결과를 브라우저 다운로드 검증으로 대체하지 않았다.
+- 도구 제약·조치: 인앱 브라우저의 download 이벤트 대기는 15초 타임아웃이었다. 실제 다운로드는 Downloads에 정상 저장돼 있었으므로 파일 생성 시각·내용을 확인했다. 제품 다운로드 실패로 계산하지 않음.
+- 증거: 다운로드 파일 3개는 로컬 Downloads, 화면 캡처는 /private/tmp/alfio-issue9-export-screen.png에만 보관. 저장소에는 원본 파일·로그·화면 캡처를 추가하지 않고 이 요약만 기록한다.
+- 자체 리뷰·범위: 실제 버튼 클릭 → 파일 저장 → 내용 확인까지 완료. 제품·테스트 변경이 없어 기존 자동 검증을 반복하지 않았다. 프론트 단위 테스트·전체 E2E 완료 검증·원격 CI는 여전히 미실행이다.
+- 처리: 이전에 승인된 로컬 커밋 범위에서 이 후속 MD 기록을 별도 문서 커밋한다. 푸시·PR 생성·노션 갱신 없음.
