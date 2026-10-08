@@ -629,3 +629,18 @@ abstract class Mjml4jTransformTask : DefaultTask() {
         }
     }
 }
+
+// Dedicated opt-in validation: ordinary product checks keep their existing skip conditions.
+val e2eValidation = tasks.register<Test>("e2eValidation") {
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    description = "Builds the current app and validates the local Chrome reservation flow."
+    dependsOn(tasks.bootJar)
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    filter { includeTestsMatching("alfio.e2e.NormalFlowE2ETest") }
+    environment("ALFIO_RUN_E2E", "true")
+    outputs.upToDateWhen { false }
+    doFirst {
+        environment("VALIDATION_APP_JAR", tasks.bootJar.get().archiveFile.get().asFile.absolutePath)
+    }
+}
