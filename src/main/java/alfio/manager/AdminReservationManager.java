@@ -127,8 +127,9 @@ public class AdminReservationManager {
     private final ReservationEmailContentHelper reservationEmailContentHelper;
     private final TransactionRepository transactionRepository;
     private final AccessService accessService;
+    private final AdditionalServiceManager additionalServiceManager;
 
-    public AdminReservationManager(PurchaseContextManager purchaseContextManager, EventManager eventManager, TicketReservationManager ticketReservationManager, TicketCategoryRepository ticketCategoryRepository, TicketRepository ticketRepository, SpecialPriceRepository specialPriceRepository, TicketReservationRepository ticketReservationRepository, EventRepository eventRepository, PlatformTransactionManager transactionManager, SpecialPriceTokenGenerator specialPriceTokenGenerator, PurchaseContextFieldRepository purchaseContextFieldRepository, PaymentManager paymentManager, NotificationManager notificationManager, MessageSourceManager messageSourceManager, TemplateManager templateManager, AdditionalServiceItemRepository additionalServiceItemRepository, AuditingRepository auditingRepository, UserRepository userRepository, ExtensionManager extensionManager, BillingDocumentRepository billingDocumentRepository, FileUploadManager fileUploadManager, PromoCodeDiscountRepository promoCodeDiscountRepository, AdditionalServiceRepository additionalServiceRepository, BillingDocumentManager billingDocumentManager, ClockProvider clockProvider, SubscriptionRepository subscriptionRepository, ReservationEmailContentHelper reservationEmailContentHelper, TransactionRepository transactionRepository, AccessService accessService) {
+    public AdminReservationManager(PurchaseContextManager purchaseContextManager, EventManager eventManager, TicketReservationManager ticketReservationManager, TicketCategoryRepository ticketCategoryRepository, TicketRepository ticketRepository, SpecialPriceRepository specialPriceRepository, TicketReservationRepository ticketReservationRepository, EventRepository eventRepository, PlatformTransactionManager transactionManager, SpecialPriceTokenGenerator specialPriceTokenGenerator, PurchaseContextFieldRepository purchaseContextFieldRepository, PaymentManager paymentManager, NotificationManager notificationManager, MessageSourceManager messageSourceManager, TemplateManager templateManager, AdditionalServiceItemRepository additionalServiceItemRepository, AuditingRepository auditingRepository, UserRepository userRepository, ExtensionManager extensionManager, BillingDocumentRepository billingDocumentRepository, FileUploadManager fileUploadManager, PromoCodeDiscountRepository promoCodeDiscountRepository, AdditionalServiceRepository additionalServiceRepository, BillingDocumentManager billingDocumentManager, ClockProvider clockProvider, SubscriptionRepository subscriptionRepository, ReservationEmailContentHelper reservationEmailContentHelper, TransactionRepository transactionRepository, AccessService accessService, AdditionalServiceManager additionalServiceManager) {
         this.purchaseContextManager = purchaseContextManager;
         this.eventManager = eventManager;
         this.ticketReservationManager = ticketReservationManager;
@@ -158,6 +159,7 @@ public class AdminReservationManager {
         this.reservationEmailContentHelper = reservationEmailContentHelper;
         this.transactionRepository = transactionRepository;
         this.accessService = accessService;
+        this.additionalServiceManager = additionalServiceManager;
     }
 
     //the following methods have an explicit transaction handling, therefore the @Transactional annotation is not helpful here
@@ -588,7 +590,10 @@ public class AdminReservationManager {
                 .reduce(this::reduceReservationResults)
                 .orElseGet(() -> Result.error(ErrorCode.custom("", "unknown error")));
 
-            return result.map(list -> Pair.of(ticketReservationRepository.findReservationById(reservationId), list));
+            return result.map(list -> {
+                additionalServiceManager.bookAdditionalServicesForReservation(event, reservationId, List.of(), Optional.empty());
+                return Pair.of(ticketReservationRepository.findReservationById(reservationId), list);
+            });
         });
     }
 
