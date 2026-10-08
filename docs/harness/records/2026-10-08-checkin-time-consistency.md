@@ -4,7 +4,7 @@
 - 범위·완료 기준: 체크인 감사 기록에 ClockProvider 적용, 행사 날짜의 시작·종료 범위로 같은 날 스캔 판정. 시간대별 동일 결과·자정 경계·다음 날짜 허용을 회귀 검증한다.
 - 실행 모드: 현재 Codex 순차 구현·검증·자체 리뷰. 별도 에이전트 없음.
 - 브랜치·기준: fix/13-checkin-time-consistency / 7e67079d9941bf366d6574df428eec7c01e97a79. 기존 재현 MD를 보존하고 먼저 eeab89379로 커밋했다. 수정 검증 대상은 그 이후 제품 코드·회귀 테스트 diff다.
-- 환경·명령 기준: 저장소 루트, macOS arm64·Corretto Java 25.0.4.1·Gradle 9.7.1·Docker 29.5.2·Testcontainers PostgreSQL 17.
+- 환경·명령 기준: 저장소 루트, macOS arm64·Corretto Java 25.0.4.1·Gradle 9.7.1·Docker 29.5.2·Testcontainers PostgreSQL 15/16/17.
 - 계획·최종 단계: 감사 기록 시계·행사 날짜 조회 수정 → 고정 시각 회귀 테스트 → Honolulu·한국 시간대 관련 검사 → UTC 전체 회귀·빌드 → 기록·자체 리뷰·커밋 준비 완료.
 
 ## 변경과 검증
@@ -21,6 +21,7 @@ AuditingRepository의 날짜 절삭 비교를 행사 시간대의 당일 자정 
 | 기존 실패 조건 해소 | PostgreSQL 17·Pacific/Honolulu | 관련 64건 통과·실패 0·스킵 0, 종료 0 |
 | 한국 시간대 결과 | PostgreSQL 17·Asia/Seoul | 같은 관련 64건 통과·실패 0·스킵 0, 종료 0 |
 | UTC 결과·전체 회귀 | PostgreSQL 17·UTC 전체 제품 검사 | 872건 중 870건 통과·실패 0·스킵 2, 종료 0. 관련 64건 포함 |
+| PostgreSQL 15/16 전체 회귀 | 각 버전에서 UTC 전체 테스트 강제 실행·실제 DB 컨테이너 이미지 확인 | 각 872건 중 870건 통과·실패 0·스킵 2, 종료 0 |
 | 빌드·품질·문서 | 전체 CI 명령·하네스 구조·공백 확인 | build·distribution·jacocoTestReport 성공. 금지 API 검사 실제 실행·통과. 하네스 구조 및 git diff --check 종료 0 |
 
 관련 테스트(각 시간대에서 실제 강제 실행):
@@ -34,6 +35,8 @@ TZ=Asia/Seoul ./gradlew test --rerun -Dpgsql.version=17 --tests 'alfio.repositor
 
 ```sh
 TZ=UTC ./gradlew build distribution jacocoTestReport -Dpgsql.version=17 --no-daemon
+TZ=UTC ./gradlew test --rerun build distribution jacocoTestReport -Dpgsql.version=15 --no-daemon
+TZ=UTC ./gradlew test --rerun build distribution jacocoTestReport -Dpgsql.version=16 --no-daemon
 python3 -B ai/tests/check.py
 git diff --check
 ```
@@ -47,7 +50,8 @@ git diff --check
 - 테스트 작성 실패: 새 단위 테스트의 PaymentProxy·ScanAudit·ScanAuditRepository import 경로를 잘못 지정해 첫 compileTestJava가 실패했다. 실제 패키지로 고친 뒤 컴파일·관련 64건·전체 회귀를 통과했다. 이 최초 실행은 테스트 0건이며 제품 테스트 실패로 집계하지 않는다. 원본 로그는 저장소에 추가하지 않는다.
 - 제품 재검증: 수정 후 테스트 실패 없음. 테스트 기대 상태·기존 행사 정책·실행 시간대를 완화하지 않았다. Honolulu와 한국 시간대에서도 통과했으므로 UTC 강제로 우회한 결과가 아니다.
 - 자체 리뷰: 감사 기록 시계가 누락 없이 변경됐는지, 날짜 범위가 시작 포함·끝 제외인지, 다음 날짜와 일광절약시간에 맞는지, 기존 예약·감사 유형 필터와 저장 형식을 유지하는지 확인했다. 제품 검증 후 코드 변경 없음.
-- 미실행·제약: PostgreSQL 15/16은 이번 로컬 검증에서 미실행. MigrationValidatorTest·NormalFlowE2ETest는 전용 환경 조건으로 전체 검사에서 2건 스킵됐다. 화면 문제가 아니므로 브라우저·실제 결제·외부 메일 검증은 수행하지 않았다. Testcontainers의 합성 데이터만 사용했다.
+- 추가 검증: f814a08f2 커밋의 제품 코드로 PostgreSQL 15/16에서도 전체 검사를 각각 실행했다. 첫 PostgreSQL 15 명령은 test가 UP-TO-DATE였으므로 검증 건수에 포함하지 않았다. test --rerun을 명시해 다시 실행했고 PostgreSQL 16에도 적용했다. 실행 중 실제 postgres:15·postgres:16 컨테이너 이미지를 확인했다. 각 버전에서 전체 872건 중 870건 통과·실패 0·스킵 2, 종료 0이며 build·distribution·jacocoTestReport 명령 성공을 확인했다. 테스트 외 변경 없는 빌드 작업은 캐시를 사용했다.
+- 미실행·제약: MigrationValidatorTest·NormalFlowE2ETest는 전용 환경 조건으로 전체 검사에서 2건 스킵됐다. 화면 문제가 아니므로 브라우저·실제 결제·외부 메일 검증은 수행하지 않았다. Testcontainers의 합성 데이터만 사용했다.
 - 데이터 검토: 새 코드·기록에 실제 개인정보·비밀번호·API 키·토큰·원본 로그·결과 JSON을 추가하지 않았다.
 - 종료 상태: 관련·전체 테스트 종료. 로컬 앱·프론트 서버를 시작하지 않았다. Docker는 기존 사용자 실행 환경을 유지했다.
-- 최종 결과·다음 행동: 수정 코드·회귀 테스트·요약 기록을 사용자 요청에 따라 커밋한다. 푸시·PR 생성·노션 수정은 수행하지 않는다.
+- 최종 결과·다음 행동: 수정 코드·회귀 테스트·요약 기록은 f814a08f2로 커밋했다. PostgreSQL 15/16 추가 검증 결과를 이 기록에 반영했으며 추가 기록은 사용자 요청에 따라 별도 문서 커밋으로 남긴다. 푸시·PR 생성·노션 수정은 수행하지 않는다.
