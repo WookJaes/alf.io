@@ -10,7 +10,6 @@ gradle-node = "7.1.0"
 gradle-release = "3.1.0"
 gradle-versions = "0.64.0"
 hierynomus-license = "0.16.1"
-kordamp-jacoco = "0.54.0"
 lombok-plugin = "9.5.0"
 sonarqube = "7.5.0.8588"
 spring-boot = "4.1.1"
@@ -138,7 +137,6 @@ gradle-node = { id = "com.github.node-gradle.node", version.ref = "gradle-node" 
 gradle-release = { id = "net.researchgate.release", version.ref = "gradle-release" }
 gradle-versions = { id = "io.github.ben-manes.versions", version.ref = "gradle-versions" }
 hierynomus-license = { id = "com.github.hierynomus.license", version.ref = "hierynomus-license" }
-kordamp-jacoco = { id = "org.kordamp.gradle.jacoco", version.ref = "kordamp-jacoco" }
 lombok = { id = "io.freefair.lombok", version.ref = "lombok-plugin" }
 sonarqube = { id = "org.sonarqube", version.ref = "sonarqube" }
 spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }

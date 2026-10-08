@@ -47,7 +47,7 @@ plugins {
     java
     idea
     `project-report`
-    alias(libs.plugins.kordamp.jacoco)
+    jacoco
     alias(libs.plugins.gradle.versions)
     alias(libs.plugins.hierynomus.license)
     alias(libs.plugins.gradle.release)
@@ -420,14 +420,9 @@ tasks.register<Copy>("copyFrontendDev") {
 
 // -- code-coverage
 
-// 0.8.11 (the version the kordamp plugin defaults to) cannot instrument
-// class file major version 69 (Java 25)
-config {
-    coverage {
-        jacoco {
-            toolVersion = "0.8.15"
-        }
-    }
+// Java 25 requires a compatible JaCoCo agent. Use Gradle's built-in plugin.
+jacoco {
+    toolVersion = "0.8.15"
 }
 
 tasks.jacocoTestReport {
