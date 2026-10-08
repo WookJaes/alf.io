@@ -1,6 +1,6 @@
 # 이슈 #15 DB 마이그레이션 검증
 
-- 작업 ID / 날짜 / 상태: issue15-migration / 2026-10-08 / incomplete
+- 작업 ID / 날짜 / 상태: issue15-migration / 2026-10-08 / completed
 - 요청·완료 기준·수정 범위: [이슈 #15](https://github.com/WookJaes/alf.io/issues/15)의 이전 앱 초기화 → 합성 행사·예약·티켓 준비 → 이전 앱 종료 → 현재 코드 앱의 동일 DB 업그레이드 및 상태·데이터·관계·주요 공개 조회 검증.
 - 실행 모드·실제 담당: 현재 Codex에서 순차 자체 구현·검증·리뷰. 하위 에이전트 없음.
 - 브랜치·기준 HEAD·시작 시 기존 변경: chore/15-local-validation / E2E 커밋 955c3aee419108a861ff8940d976f78b3d64760e / 깨끗함.
@@ -88,3 +88,12 @@
 - Linux 확인 범위: 공통 브라우저의 옵션 전후 대조·회귀·현재 앱의 실제 예약 흐름까지 확인했다. Linux 컨테이너에서 이전 앱 전체 업그레이드를 재실행한 것으로 표현하지 않는다. 수정된 커밋으로 GitHub 마이그레이션 워크플로우를 다시 실행해야 원격 검증 완료다.
 - 사용자 요청에 따라 공통 브라우저 수정·검증 요약을 함께 커밋한다. 이번 단계에서는 푸시·PR 본문 변경·외부 댓글·노션 수정은 수행하지 않는다. 로컬 성공과 원격 재검증 미완료를 구분해 incomplete 상태를 유지한다.
 - 최종 일반 검사·정리: PostgreSQL 16 일반 제품 검사 873건 중 통과 870·실패/오류 0·스킵 3, 종료 0. 새 브라우저 회귀의 일반 실행 스킵 1건 증가를 제품 결함으로 계산하지 않는다. 앱·브라우저·컨테이너 정리와 Docker 원상 복원은 위 E2E 수정 기록에 명시했다.
+
+### 수정 커밋의 원격 Linux 재검증
+
+- 사용자 승인으로 982ce4c501304afffd66af9d3d988272d756bbaa를 푸시한 뒤 `gh workflow run migration-test.yml --repo WookJaes/alf.io --ref chore/15-local-validation` 실행. [재검증 37780484050](https://github.com/WookJaes/alf.io/actions/runs/37780484050)의 headSha가 수정 커밋과 일치함을 확인했다. workflow_dispatch, Ubuntu 24.04·Linux amd64·이전 소스 빌드용 Java 17·현재 실행용 Temurin Java 25, Chrome 154.0.8037.97·PostgreSQL 16.13.
+- 2026-10-08 21:56 KST 실행 요청·22:03 KST 성공 종료. 이전 고정 소스 bootJar 빌드 성공(2분 11초), 현재 코드의 migrationValidation 실제 실행·BUILD SUCCESSFUL(3분 32초), 후속 XML 검사기 tests 1·failures 0·errors 0·skipped 0. Gradle·결과 검사·작업 모두 성공.
+- 이전 대상: 2.0-M5-2606·커밋 2b4759f9136cf5c6f5cb7784c30c9a09da217151. 현재 대상: 수정 커밋으로 빌드한 2.0-M6-SNAPSHOT. 버전·이전 소스 식별자 출력과 실행 대상이 맞는지 대조했다. 기존 실패 단계였던 이전 앱 관리자 페이지 이동·합성 데이터 준비도 통과했다.
+- 결과: PostgreSQL server 16.13, 기존 버전 이력 179/179·pending 0·failed 0·고아 관계 0, 행사 data migration COMPLETE. 행사 1·분류 1·확정 예약 1·티켓 10(확정 1·미예약 9)의 데이터·관계·가격·상태 및 공개 조회 보존 검사를 실제 완료했다. 원격 로그의 이력·보존 요약과 최종 XML 검사기 건수를 직접 확인했다.
+- 기존 원격 실패는 실패 이력으로 보존한다. 이전 원격 미실행·incomplete 표시는 해당 단계의 기록이며 이번 수정 커밋의 원격 검증 완료로 현재 상태를 completed로 갱신했다. 모든 이전 버전·DB 조합·유료 결제·실제 메일 검증으로 확대 해석하지 않는다.
+- 사용자 요청에 따라 이번 원격 결과 요약을 별도 문서 커밋으로 남기고 푸시한다. 원본 로그·DOM·XML·결과 JSON은 저장소에 추가하지 않고, PR 본문·외부 댓글·노션은 수정하지 않는다.
