@@ -4,7 +4,7 @@
 - 요청·완료 기준: 관리자 생성 예약의 필수 고정·비율 수수료를 일반 예약의 기존 규칙으로 적용. 단일·다중 티켓과 주문 요약을 검증하고 선택 옵션·판매 기간 제한을 유지한다.
 - 실행 모드: 현재 Codex 순차 구현·검증·자체 리뷰. 별도 에이전트 없음.
 - 브랜치·기준 HEAD·시작 변경: fix/11-admin-mandatory-options / e898acd92 / 작업 트리 깨끗함.
-- 환경·명령 기준: 저장소 루트, macOS arm64·Corretto Java 25.0.4.1·Gradle 9.7.1·Docker PostgreSQL 16.15·인앱 브라우저. 합성 데이터만 사용.
+- 환경·명령 기준: 저장소 루트, macOS arm64·Corretto Java 25.0.4.1·Gradle 9.7.1·자동 테스트 Testcontainers 기본 PostgreSQL 10·브라우저 검증 PostgreSQL 16.15·인앱 브라우저. 합성 데이터만 사용.
 - 검증 대상: 기준 HEAD 이후 AdminReservationManager와 AdminReservationManagerIntegrationTest의 미커밋 diff. 제품 검증 후 코드 변경 없음.
 - 계획·최종 단계: 회귀 테스트로 누락 확인 → 기존 필수 옵션 예약 함수 호출 → 관련 테스트·전체 제품 테스트·로컬 화면 검증 → 기록 및 diff 자체 리뷰 완료.
 
@@ -50,6 +50,30 @@ TZ=UTC ./gradlew test -x frontendBuild -x frontendPnpmInstall -x frontendAdminPn
 - 브라우저 환경: 서버 재시작 중 연결 거부 화면이 남아 새 검증 탭으로 복구했다. 비율 2장 예약은 합성 행사의 잔여 좌석 부족으로 처음 거부됐다. 관리자 화면의 기존 Add extra seats to event if needed 기능으로 필요한 합성 좌석만 추가해 성공했다. 기존 고객·예약·티켓을 삭제하지 않았다.
 - 리뷰 방식·범위: 자체 diff 리뷰. 모든 티켓 성공 후 한 번만 옵션을 추가하고 실패 Result에서는 호출하지 않는지, 기존 트랜잭션 롤백 경로 안에 있는지, 다중 카테고리 합계·옵션 티켓 연결·선택 옵션·판매 기간·반복 화면 이동을 대조했다. 새 의존성·공개 HTTP API·프론트 코드·DB 스키마·CI 설정 변경 없음.
 - 관련 기억: 등록된 공통 기억 없음. 기존 재현 기록의 네 가지 조건을 기준으로 검증했다. 기존 체크인 시간 의존성 때문에 전체 제품 테스트는 앞선 검증과 같은 TZ=UTC로 실행했다. 시간 의존성 자체는 이번에 수정하지 않았다.
-- 미실행·제약: PostgreSQL 15/17은 로컬 미실행. MigrationValidatorTest와 NormalFlowE2ETest는 전용 환경·실행 플래그가 필요한 기존 조건에 따라 2건 스킵됐다. 화면 확인은 실제 로컬 브라우저로 별도 수행했으며 자동 E2E 통과로 표시하지 않는다. 주문 전체 금액 비율 정책은 통합 테스트로 확인했고 브라우저에서는 고정·티켓 금액 비율 정책을 확인했다.
+- 최초 검증 시 제약(아래 추가 검증으로 보완): PostgreSQL 15/17은 로컬 미실행. MigrationValidatorTest와 NormalFlowE2ETest는 전용 환경·실행 플래그가 필요한 기존 조건에 따라 2건 스킵됐다. 화면 확인은 실제 로컬 브라우저로 별도 수행했으며 자동 E2E 통과로 표시하지 않는다. 주문 전체 금액 비율 정책은 통합 테스트로 확인했고 브라우저에서는 고정·티켓 금액 비율 정책을 확인했다.
 - 데이터 검토: 실제 연락처·결제 데이터·비밀번호·토큰·API 키·원본 로그·결과 JSON을 저장소에 추가하지 않았다. 테스트 고객 주소는 example.test 합성 값이다.
 - 최종 결과: 관련 및 전체 제품 테스트·네 가지 화면 조건 검증 완료. 커밋·푸시·PR 생성·노션 수정은 수행하지 않았다.
+
+
+## 추가 검증 — PostgreSQL 15/17·전체 예약 금액 비율 수수료
+
+- 검증 대상: 1fadaf345의 제품 코드·테스트, 코드 변경 없이 실행. 시작 작업 트리 깨끗함.
+- DB 버전 표기 정정: 앞선 자동 테스트 명령은 pgsql.version을 지정하지 않아 BaseTestConfiguration의 기본 PostgreSQL 10으로 실행됐다. 브라우저용 DB 16.15와 구분해 환경 표기를 정정했다. 이번에는 버전을 명시했다.
+- 범위: 관리자 예약 19건·기존 비율 수수료 9건·일반 예약 흐름 19건, 총 47건을 각 PostgreSQL 버전에서 실제 실행했다. 전체 제품 864건을 각 버전에서 실행한 결과로 확대해 해석하지 않는다.
+
+```sh
+TZ=UTC ./gradlew test -Dpgsql.version=15 --tests 'alfio.manager.AdminReservationManagerIntegrationTest' --tests 'alfio.manager.PercentageAdditionalServicesIntegrationTest' --tests 'alfio.controller.api.v2.user.reservation.ReservationFlowIntegrationTest' -x frontendBuild -x frontendPnpmInstall -x frontendAdminPnpmInstall --no-daemon
+TZ=UTC ./gradlew test --rerun -Dpgsql.version=17 --tests 'alfio.manager.AdminReservationManagerIntegrationTest' --tests 'alfio.manager.PercentageAdditionalServicesIntegrationTest' --tests 'alfio.controller.api.v2.user.reservation.ReservationFlowIntegrationTest' -x frontendBuild -x frontendPnpmInstall -x frontendAdminPnpmInstall --no-daemon
+```
+
+| 추가 검증 | 실행 결과 |
+|---|---|
+| PostgreSQL 15 관련 테스트 | 종료 0, 47건 통과·실패 0·스킵 0, test 태스크 실제 실행 |
+| PostgreSQL 17 관련 테스트 | 종료 0, 47건 통과·실패 0·스킵 0, --rerun으로 test 태스크 실제 재실행 |
+| 전체 예약 금액 10%, 티켓 1장 | 관리자 상세: 티켓 100 + 수수료 10 = 110 CHF. 결제 전 화면도 동일 |
+| 전체 예약 금액 10%, 티켓 2장 | 관리자 상세: 티켓 200 + 수수료 20 = 220 CHF. 결제 전 화면도 동일. 수수료 수량은 1 |
+
+- 브라우저 절차: 동일 합성 행사의 필수 옵션을 Mandatory percentage fee, entire reservation (including user-selected Additional Items, if any)·10%로 변경하고 저장된 정책을 확인했다. 티켓 1장·2장 예약을 새로 만들어 관리자 상세와 공유 링크의 Contact Details → Continue → 결제 전 요약을 대조했다. 잔여 좌석 부족은 기존 좌석 추가 기능으로 필요한 합성 좌석만 추가했다.
+- 실제 결제·약관 동의·메일 발송 없음. 추가 선택 옵션이 없는 관리자 생성 조건으로 확인했으며 선택 옵션을 포함한 브라우저 조건을 검증했다고 주장하지 않는다.
+- 추가 검증 중 테스트 실패 없음. 기존 자동 E2E·마이그레이션 스킵 2건과 체크인 시간 의존성 수정은 이번 범위 밖이다.
+- 리뷰·최종 상태: 버전별 JUnit 실제 건수·종료 코드와 관리자/결제 화면의 수수료·합계를 자체 대조했다. 이번 변경은 요약 MD의 추가·정정만이며 커밋·푸시·PR 생성·노션 수정 없음.
