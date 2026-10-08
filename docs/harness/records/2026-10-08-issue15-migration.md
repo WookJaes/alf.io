@@ -1,6 +1,6 @@
 # 이슈 #15 DB 마이그레이션 검증
 
-- 작업 ID / 날짜 / 상태: issue15-migration / 2026-10-08 / completed
+- 작업 ID / 날짜 / 상태: issue15-migration / 2026-10-08 / incomplete
 - 요청·완료 기준·수정 범위: [이슈 #15](https://github.com/WookJaes/alf.io/issues/15)의 이전 앱 초기화 → 합성 행사·예약·티켓 준비 → 이전 앱 종료 → 현재 코드 앱의 동일 DB 업그레이드 및 상태·데이터·관계·주요 공개 조회 검증.
 - 실행 모드·실제 담당: 현재 Codex에서 순차 자체 구현·검증·리뷰. 하위 에이전트 없음.
 - 브랜치·기준 HEAD·시작 시 기존 변경: chore/15-local-validation / E2E 커밋 955c3aee419108a861ff8940d976f78b3d64760e / 깨끗함.
@@ -69,3 +69,22 @@
 - 정리 확인: 이번 앱 JVM·ChromeDriver·crash handler·컨테이너 잔존 0, alfio-validation 임시 디렉터리·alfio-previous 임시 소스/빌드 디렉터리 0. 조사용 배포 JAR·오류 DOM·원본 임시 로그는 요약 완료 후 삭제하며 무시되는 build의 JUnit/HTML 결과·도구 캐시만 보관. 사용자 데이터·기존 DB·프로세스·컨테이너 제거 없음.
 - 환경 복원: 시작 시 Docker daemon이 정지해 있어 이번 작업에서 Docker Desktop을 시작했으며, 최종 실행 컨테이너 0개 확인 후 Docker Desktop을 다시 종료했다. 기존 컨테이너·볼륨·도구 캐시는 삭제하지 않았다.
 - 최종 상태: 구현과 실제 로컬 검증 완료. 승인 범위의 마이그레이션 커밋만 수행하며 푸시·PR·외부 댓글·노션 수정 없음.
+
+### 원격 Linux 수동 실행 — 2026-10-08
+
+- 사용자 요청으로 `gh workflow run migration-test.yml --repo WookJaes/alf.io --ref chore/15-local-validation` 실행. [실행 37775796619](https://github.com/WookJaes/alf.io/actions/runs/37775796619), workflow_dispatch, 검증 커밋 c40957a8dd06ea9d9120f61dbd8d553f16d9aa41.
+- 환경: GitHub Actions ubuntu-latest(Ubuntu 24.04), Linux amd64, 이전 소스 빌드용 Java 17·현재 실행용 Temurin Java 25.0.4.1. Chrome·ChromeDriver 154.0.8037.57, Selenium 4.43.0. 21:17 KST 시작, 21:27 KST 실패 종료.
+- 실제 결과: migrationValidation 실행, 1건 실행·1건 실패·통과 0건, Gradle 및 작업 종료 코드 1. Gradle 실패로 후속 XML 결과 검사기는 실행되지 않았다.
+- 실패 요약: preparePreviousFixture → AdminConsole.login에서 이전 앱의 관리자 로그인 페이지로 처음 이동하는 ChromeDriver 명령이 Selenium JdkHttpClient의 TimeoutException으로 실패했다. 이전 앱의 합성 데이터 준비 중이며 현재 앱 업그레이드·Flyway 이력·데이터·관계·공개 조회 보존 검사에는 도달하지 못했다.
+- 원인·조치: 동일 커밋의 원격 E2E도 같은 브라우저 초기 탐색 단계에서 실패했다. 공통 환경·브라우저 경로가 조사 대상이지만 근본 원인은 실행 로그만으로 확정하지 않는다. 이번 요청은 수동 실행·기록이므로 코드·워크플로우를 변경하거나 단순 재실행하지 않았다. 로컬에서 확인한 기존 이력 179건 보존 등을 이번 원격 실행 결과로 재사용하지 않는다.
+- 재검증·다음 행동: 실패 시 앱·브라우저 진단 근거를 확인해 원인을 수정한 뒤 전용 Linux E2E와 마이그레이션을 재실행해야 한다. 로컬 성공 근거는 유지하지만 원격 검증은 미완료이므로 작업 상태를 incomplete로 갱신했다. 원본 로그·DOM·결과 JSON은 저장소에 추가하지 않는다.
+- 이번 기록 변경은 미커밋이며 푸시·PR 본문 변경·외부 댓글 등록은 수행하지 않는다.
+
+### 공통 브라우저 수정 후 재검증
+
+- 수정·근거: [E2E 수정·Linux 대조 기록](2026-10-08-issue15-e2e.md)의 공통 ValidationBrowser를 사용한다. Linux 탐색 시간 초과와 관련된 crashpad 테스트 옵션을 제거하고 DOM 대기·명시적 제한 시간·로그인 HTTP 준비 확인을 적용했다. 버전 선정·이전 앱 종료 순서·이력·데이터·관계·공개 조회의 기대값은 완화하지 않았다.
+- 최종 명령: `bash scripts/validation/migration.sh` 종료 0. migrationValidation 실제 1건 통과·실패/오류/스킵 0. macOS arm64·Java 25.0.4.1·Chrome 154.0.8037.98·PostgreSQL 16.13에서 이전 소스는 고정 커밋 2b4759f9136cf5c6f5cb7784c30c9a09da217151·Java 17로 다시 빌드했고, 현재 앱은 이번 수정의 작업 트리 bootJar를 사용했다.
+- 결과: 기존 버전 이력 179/179·pending/failed/orphan 0, 행사 data migration COMPLETE. 행사 1·분류 1·확정 예약 1·티켓 10(확정 1·미예약 9)의 데이터·관계·가격·상태 및 공개 조회 보존 검사 통과. 이전 앱의 로그인 페이지 HTTP 200·폼 존재와 브라우저 버전도 출력으로 확인했다.
+- Linux 확인 범위: 공통 브라우저의 옵션 전후 대조·회귀·현재 앱의 실제 예약 흐름까지 확인했다. Linux 컨테이너에서 이전 앱 전체 업그레이드를 재실행한 것으로 표현하지 않는다. 수정된 커밋으로 GitHub 마이그레이션 워크플로우를 다시 실행해야 원격 검증 완료다.
+- 사용자 요청에 따라 공통 브라우저 수정·검증 요약을 함께 커밋한다. 이번 단계에서는 푸시·PR 본문 변경·외부 댓글·노션 수정은 수행하지 않는다. 로컬 성공과 원격 재검증 미완료를 구분해 incomplete 상태를 유지한다.
+- 최종 일반 검사·정리: PostgreSQL 16 일반 제품 검사 873건 중 통과 870·실패/오류 0·스킵 3, 종료 0. 새 브라우저 회귀의 일반 실행 스킵 1건 증가를 제품 결함으로 계산하지 않는다. 앱·브라우저·컨테이너 정리와 Docker 원상 복원은 위 E2E 수정 기록에 명시했다.

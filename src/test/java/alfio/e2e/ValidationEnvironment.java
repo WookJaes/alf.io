@@ -112,6 +112,17 @@ public final class ValidationEnvironment implements AutoCloseable {
         }
     }
 
+    public void assertLoginPageReady() throws Exception {
+        var request = HttpRequest.newBuilder(URI.create(baseUrl + "/authentication"))
+            .timeout(Duration.ofSeconds(10)).build();
+        var response = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build()
+            .send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 200 || !response.body().contains("id=\"username\"")) {
+            throw new IllegalStateException("Login page is not ready: HTTP " + response.statusCode());
+        }
+        System.out.println("Validation login page: HTTP 200, username form present");
+    }
+
     public void seedAdministrator() throws Exception {
         try (var connection = connection();
              var update = connection.prepareStatement("update ba_user set password = ?, first_name = 'Synthetic', last_name = 'Administrator', email_address = 'admin@example.invalid' where username = 'admin'");

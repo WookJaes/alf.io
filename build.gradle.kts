@@ -637,7 +637,10 @@ val e2eValidation = tasks.register<Test>("e2eValidation") {
     dependsOn(tasks.bootJar)
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
-    filter { includeTestsMatching("alfio.e2e.NormalFlowE2ETest") }
+    filter {
+        includeTestsMatching("alfio.e2e.NormalFlowE2ETest")
+        includeTestsMatching("alfio.e2e.ValidationBrowserTest")
+    }
     environment("ALFIO_RUN_E2E", "true")
     outputs.upToDateWhen { false }
     doFirst {

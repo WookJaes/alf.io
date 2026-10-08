@@ -40,5 +40,5 @@ PYHASH
 )"
 printf 'Previous source commit: %s\nPrevious app SHA-256: %s\n' "$previous_commit" "$VALIDATION_PREVIOUS_SHA256"
 rm -rf build/test-results/migrationValidation
-./gradlew --no-daemon migrationValidation --no-build-cache
+./gradlew --no-daemon migrationValidation --no-build-cache -Pverbose
 python3 scripts/validation/check-results.py build/test-results/migrationValidation

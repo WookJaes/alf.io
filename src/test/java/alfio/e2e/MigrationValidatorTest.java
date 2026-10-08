@@ -21,8 +21,6 @@ import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
-import org.openqa.selenium.chrome.ChromeDriver;
-import org.openqa.selenium.chrome.ChromeOptions;
 import tools.jackson.databind.JsonNode;
 
 import java.net.URI;
@@ -65,6 +63,7 @@ class MigrationValidatorTest {
         try (var environment = new ValidationEnvironment()) {
             environment.startApp(previousJar);
             environment.seedAdministrator();
+            environment.assertLoginPageReady();
             var slug = "migration-" + UUID.randomUUID();
             preparePreviousFixture(environment.baseUrl(), slug);
             Map<String, List<List<String>>> before;
@@ -119,9 +118,7 @@ class MigrationValidatorTest {
     }
 
     private static void preparePreviousFixture(String baseUrl, String slug) throws Exception {
-        var options = new ChromeOptions();
-        options.addArguments("--headless=new", "--window-size=1440,1200", "--disable-dev-shm-usage", "--no-sandbox", "--lang=en", "--disable-crashpad-for-testing");
-        var driver = new ChromeDriver(options);
+        var driver = ValidationBrowser.create();
         try {
             var browser = new NormalFlowE2ETest.BrowserWebDriver(NormalFlowE2ETest.BrowserWebDriver.Browser.CHROME, driver);
             var admin = new AdminConsole(browser, baseUrl, "admin", "validation-only-password", null);

@@ -21,8 +21,6 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.chrome.ChromeDriver;
-import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.Select;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
@@ -44,9 +42,8 @@ class NormalFlowE2ETest {
         try (var environment = new ValidationEnvironment()) {
             var baseUrl = environment.startApp(Path.of(System.getenv("VALIDATION_APP_JAR")));
             environment.seedAdministrator();
-            var options = new ChromeOptions();
-            options.addArguments("--headless=new", "--window-size=1440,1200", "--disable-dev-shm-usage", "--no-sandbox", "--lang=en", "--disable-crashpad-for-testing");
-            var driver = new ChromeDriver(options);
+            environment.assertLoginPageReady();
+            var driver = ValidationBrowser.create();
             try {
                 var browser = new BrowserWebDriver(BrowserWebDriver.Browser.CHROME, driver);
                 var slug = "e2e-" + UUID.randomUUID();

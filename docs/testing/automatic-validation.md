@@ -12,6 +12,10 @@ bash scripts/validation/e2e.sh
 
 현재 템플릿의 관리자 `displayName`, `format`, `organizationId`, `freeOfCharge`, `actions-dpdwn`과 공개 `amount`, `show-event-continue`, `first-name`, `reservation-page.title`, `app-success`를 사용한다. DOM 존재·클릭 가능·URL 및 표시 상태를 단계별로 기다린다. 화면 변경으로 선택자나 대기 조건이 맞지 않으면 실패한다.
 
+두 전용 검사는 ValidationBrowser의 공통 Chrome 설정을 사용한다. Linux 탐색 정지와 관련된 `--disable-crashpad-for-testing` 옵션은 사용하지 않는다. 페이지 전체 로딩 대신 DOM 준비(EAGER)를 기다리고, 페이지 탐색·스크립트의 제한 시간은 각각 30초다. 이후 각 단계의 필수 화면 요소와 최종 DB 상태를 기존 기준으로 확인한다. 브라우저 시작 전 로그인 페이지의 HTTP 200·폼 존재를 별도로 확인해 앱 응답 실패와 브라우저 탐색 실패를 구분한다. 전용 실행 스크립트는 `-Pverbose`로 이 상태·브라우저 버전·마이그레이션 결과를 출력하며 응답 본문이나 비밀값은 출력하지 않는다.
+
+E2E 전용 작업에는 지연된 이미지 응답이 있어도 로그인 DOM을 사용할 수 있는 브라우저 회귀 1건이 추가되어 있다. 기본 예약 흐름 1건과 합쳐 실제 2건을 실행하며, 이것을 제품 기능 두 개의 검증으로 계산하지 않는다. 일반 제품 검사에서는 이 브라우저 회귀도 opt-in 조건으로 스킵된다.
+
 무료 행사로 Stripe·실제 결제·유료 청구 검증을 대체한다. 온라인 행사로 외부 지도·지오코딩 호출을 제외한다. `MAILER_TYPE=disabled` 및 disable-jobs로 외부 메일·정기 작업을 막는다. 실제 결제·메일 전달 및 기존 커스텀 메시지 발송은 검증하지 않는다. 데모 프로필은 행사 게시를 금지하므로 사용하지 않는다.
 
 GitHub Actions → **Local E2E validation** → **Run workflow**에서 검증할 브랜치를 선택한다. 외부 서버·BrowserStack 비밀 설정과 저장소 이름 제한이 없다. 수동 실행만 제공하며 일반 PR 필수 검사로 추가하지 않는다.
