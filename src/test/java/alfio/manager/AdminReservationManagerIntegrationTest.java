@@ -38,7 +38,10 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.apache.commons.lang3.tuple.Triple;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
 
@@ -82,6 +85,98 @@ class AdminReservationManagerIntegrationTest extends BaseIntegrationTest {
     private EventRepository eventRepository;
     @Autowired
     private ConfigurationRepository configurationRepository;
+
+    @Autowired
+    private AdditionalServiceItemRepository additionalServiceItemRepository;
+    @Autowired
+    private NamedParameterJdbcTemplate jdbcTemplate;
+
+    @ParameterizedTest
+    @CsvSource({
+        "MANDATORY_ONE_FOR_TICKET, 1", "MANDATORY_ONE_FOR_TICKET, 2",
+        "MANDATORY_PERCENTAGE_FOR_TICKET, 1", "MANDATORY_PERCENTAGE_FOR_TICKET, 2",
+        "MANDATORY_PERCENTAGE_RESERVATION, 1", "MANDATORY_PERCENTAGE_RESERVATION, 2"
+    })
+    void mandatoryFeesInAdminReservation(AdditionalService.SupplementPolicy policy, int quantity) {
+        var now = ZonedDateTime.now(ClockProvider.clock());
+        var eventAndUser = initFeeEvent(List.of(
+            fee(policy, now.minusDays(1), now.plusDays(1), 1)), false);
+        var event = eventAndUser.getLeft();
+        var reservation = createFeeReservation(eventAndUser, quantity);
+        var items = additionalServiceItemRepository.findByReservationUuid(event.getId(), reservation.getId());
+        int expectedItems = policy == AdditionalService.SupplementPolicy.MANDATORY_ONE_FOR_TICKET ? quantity : 1;
+        assertEquals(expectedItems, items.size());
+        assertEquals(quantity * 1000, items.stream().mapToInt(AdditionalServiceItem::getFinalPriceCts).sum());
+        assertTrue(items.stream().allMatch(item -> item.getStatus() == AdditionalServiceItem.AdditionalServiceItemStatus.PENDING));
+        var ticketIds = ticketRepository.findTicketIdsInReservation(reservation.getId());
+        assertTrue(items.stream().allMatch(item -> ticketIds.contains(item.getTicketId())));
+        assertEquals(quantity * 11000, ticketReservationManager.totalReservationCostWithVAT(reservation.getId()).getLeft().getPriceWithVAT());
+        assertEquals(quantity * 11000, ticketReservationManager.orderSummaryForReservationId(reservation.getId(), event).getPriceInCents());
+    }
+
+    @Test
+    void optionalAndUnavailableFeesAreNotAdded() {
+        var now = ZonedDateTime.now(ClockProvider.clock());
+        var eventAndUser = initFeeEvent(List.of(
+            fee(AdditionalService.SupplementPolicy.OPTIONAL_UNLIMITED_AMOUNT, now.minusDays(1), now.plusDays(1), 1),
+            fee(AdditionalService.SupplementPolicy.MANDATORY_ONE_FOR_TICKET, now.minusDays(2), now.minusDays(1), 2),
+            fee(AdditionalService.SupplementPolicy.MANDATORY_PERCENTAGE_FOR_TICKET, now.plusDays(1), now.plusDays(2), 3)), false);
+        var reservation = createFeeReservation(eventAndUser, 2);
+        assertTrue(additionalServiceItemRepository.findByReservationUuid(eventAndUser.getLeft().getId(), reservation.getId()).isEmpty());
+        assertEquals(20000, ticketReservationManager.totalReservationCostWithVAT(reservation.getId()).getLeft().getPriceWithVAT());
+    }
+
+    @Test
+    void percentageFeeIncludesAllCategoriesOnce() {
+        var now = ZonedDateTime.now(ClockProvider.clock());
+        var eventAndUser = initFeeEvent(List.of(
+            fee(AdditionalService.SupplementPolicy.MANDATORY_PERCENTAGE_FOR_TICKET, now.minusDays(1), now.plusDays(1), 1)), true);
+        var reservation = createFeeReservation(eventAndUser, 1);
+        var items = additionalServiceItemRepository.findByReservationUuid(eventAndUser.getLeft().getId(), reservation.getId());
+        assertEquals(1, items.size());
+        assertEquals(1500, items.getFirst().getFinalPriceCts());
+        assertEquals(16500, ticketReservationManager.totalReservationCostWithVAT(reservation.getId()).getLeft().getPriceWithVAT());
+    }
+
+    private EventModification.AdditionalService fee(AdditionalService.SupplementPolicy policy,
+                                                   ZonedDateTime inception, ZonedDateTime expiration, int ordinal) {
+        return new EventModification.AdditionalService(null, BigDecimal.TEN,
+            !AdditionalService.SupplementPolicy.isMandatoryPercentage(policy), ordinal, -1, -1,
+            DateTimeModification.fromZonedDateTime(inception), DateTimeModification.fromZonedDateTime(expiration),
+            BigDecimal.ZERO, AdditionalService.VatType.NONE, List.of(),
+            List.of(new EventModification.AdditionalServiceText(null, "en", "Booking fee", AdditionalServiceText.TextType.TITLE)),
+            List.of(new EventModification.AdditionalServiceText(null, "en", "Synthetic booking fee", AdditionalServiceText.TextType.DESCRIPTION)),
+            AdditionalService.AdditionalServiceType.SUPPLEMENT, policy, null, null);
+    }
+
+    private Pair<Event, String> initFeeEvent(List<EventModification.AdditionalService> fees, boolean multipleCategories) {
+        var now = ZonedDateTime.now(ClockProvider.clock());
+        var prices = multipleCategories ? List.of(new BigDecimal("100"), new BigDecimal("50")) : List.of(new BigDecimal("100"));
+        var categories = prices.stream().map(price -> new TicketCategoryModification(null, "category " + price,
+            TicketCategory.TicketAccessType.INHERIT, 10,
+            DateTimeModification.fromZonedDateTime(now.minusDays(1)), DateTimeModification.fromZonedDateTime(now.plusDays(1)),
+            DESCRIPTION, price, false, "", false, null, null, null, null, null, 0, null, null, AlfioMetadata.empty())).toList();
+        var eventAndUser = initEvent(categories, organizationRepository, userManager, eventManager, eventRepository,
+            fees, Event.EventFormat.IN_PERSON, PriceContainer.VatStatus.NONE);
+        // The shared fixture sets 1% VAT; this regression uses the reproduced zero-tax condition.
+        jdbcTemplate.update("update event set vat = 0, vat_status = 'NONE' where id = :eventId",
+            Map.of("eventId", eventAndUser.getLeft().getId()));
+        return Pair.of(eventRepository.findById(eventAndUser.getLeft().getId()), eventAndUser.getRight());
+    }
+
+    private TicketReservation createFeeReservation(Pair<Event, String> eventAndUser, int quantity) {
+        var event = eventAndUser.getLeft();
+        var ticketsInfo = ticketCategoryRepository.findAllTicketCategories(event.getId()).stream()
+            .map(category -> new TicketsInfo(new Category(category.getId(), category.getName(), category.getPrice(), null),
+                generateAttendees(quantity), false, false)).toList();
+        var customer = new CustomerData("Synthetic", "Customer", "customer@example.test", "", "", "en", "", "CH", null);
+        var modification = new AdminReservationModification(
+            DateTimeModification.fromZonedDateTime(ZonedDateTime.now(ClockProvider.clock()).plusDays(1)),
+            customer, ticketsInfo, "en", false, false, null, null, null, null);
+        var result = adminReservationManager.createReservation(modification, event.getShortName(), eventAndUser.getRight());
+        assertTrue(result.isSuccess(), () -> String.valueOf(result.getErrors()));
+        return result.getData().getLeft();
+    }
 
     @BeforeEach
     public void init() {
