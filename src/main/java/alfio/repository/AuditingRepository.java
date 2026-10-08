@@ -81,8 +81,16 @@ public interface AuditingRepository {
                                        @Bind("ticketId") int ticketId,
                                        @Bind("eventType") Audit.EventType eventType);
 
-    @Query("select count(*) from auditing_user where reservation_id = :reservationId and event_type in (:eventTypes) and date_trunc('day', :referenceDate::timestamp) = date_trunc('day', event_time)")
-    Integer countAuditsOfTypesInTheSameDay(@Bind("reservationId") String reservationId, @Bind("eventTypes") Collection<String> eventTypes, @Bind("referenceDate") ZonedDateTime date);
+    default Integer countAuditsOfTypesInTheSameDay(String reservationId, Collection<String> eventTypes, ZonedDateTime date) {
+        var day = date.toLocalDate();
+        var start = Date.from(day.atStartOfDay(date.getZone()).toInstant());
+        var end = Date.from(day.plusDays(1).atStartOfDay(date.getZone()).toInstant());
+        return countAuditsOfTypesInInterval(reservationId, eventTypes, start, end);
+    }
+
+    @Query("select count(*) from auditing_user where reservation_id = :reservationId and event_type in (:eventTypes) and event_time >= :start and event_time < :end")
+    Integer countAuditsOfTypesInInterval(@Bind("reservationId") String reservationId, @Bind("eventTypes") Collection<String> eventTypes,
+                                       @Bind("start") Date start, @Bind("end") Date end);
 
     @Query("""
         insert into auditing(reservation_id, user_id, event_id, event_type, event_time, entity_type, entity_id, modifications) \

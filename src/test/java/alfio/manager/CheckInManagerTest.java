@@ -20,6 +20,17 @@ import alfio.manager.support.CheckInStatistics;
 import alfio.manager.system.ConfigurationLevel;
 import alfio.manager.system.ConfigurationManager;
 import alfio.model.Event;
+import alfio.model.Ticket;
+import alfio.model.TicketReservation;
+import alfio.model.transaction.PaymentProxy;
+import alfio.model.Audit;
+import alfio.model.audit.ScanAudit;
+import alfio.repository.TicketRepository;
+import alfio.repository.TicketReservationRepository;
+import alfio.repository.audit.ScanAuditRepository;
+import alfio.repository.AuditingRepository;
+import alfio.repository.user.UserRepository;
+import alfio.util.ClockProvider;
 import alfio.model.system.ConfigurationKeyValuePathLevel;
 import alfio.model.user.Organization;
 import alfio.repository.EventRepository;
@@ -28,12 +39,18 @@ import alfio.test.util.TestUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.Date;
 import java.util.Optional;
 
 import static alfio.model.system.ConfigurationKeys.CHECK_IN_STATS;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static alfio.manager.support.CheckInStatus.*;
 import static org.mockito.Mockito.*;
 
 class CheckInManagerTest {
@@ -85,5 +102,54 @@ class CheckInManagerTest {
         verify(eventRepository, never()).retrieveCheckInStatisticsForEvent(eq(EVENT_ID), isNull());
     }
 
+
+    @Test
+    void manualCheckInUsesTheSameFixedInstantForBothAuditRecords() {
+        verifyAuditClock(false);
+    }
+
+    @Test
+    void revertCheckInUsesTheSameFixedInstantForBothAuditRecords() {
+        verifyAuditClock(true);
+    }
+
+    private void verifyAuditClock(boolean revert) {
+        var fixedClock = Clock.fixed(Instant.parse("2024-01-01T15:00:00Z"), ZoneId.of("Asia/Seoul"));
+        var clockProvider = mock(ClockProvider.class);
+        when(clockProvider.getClock()).thenReturn(fixedClock);
+        var ticketRepository = mock(TicketRepository.class);
+        var reservationRepository = mock(TicketReservationRepository.class);
+        var scanAuditRepository = mock(ScanAuditRepository.class);
+        var auditingRepository = mock(AuditingRepository.class);
+        var userRepository = mock(UserRepository.class);
+        var extensionManager = mock(ExtensionManager.class);
+        var event = mock(Event.class);
+        var ticket = mock(Ticket.class);
+        when(ticket.getUuid()).thenReturn("ticket");
+        when(ticket.getId()).thenReturn(1);
+        when(ticket.getCategoryId()).thenReturn(1);
+        when(ticket.getEventId()).thenReturn(EVENT_ID);
+        when(ticket.getTicketsReservationId()).thenReturn("reservation");
+        when(ticket.getStatus()).thenReturn(revert ? Ticket.TicketStatus.CHECKED_IN : Ticket.TicketStatus.ACQUIRED);
+        when(ticketRepository.findByUUIDForUpdate("ticket")).thenReturn(Optional.of(ticket));
+        when(ticketRepository.findByUUID("ticket")).thenReturn(ticket);
+        when(eventRepository.findById(EVENT_ID)).thenReturn(event);
+        when(userRepository.findIdByUserName(USERNAME)).thenReturn(Optional.empty());
+        var reservation = mock(TicketReservation.class);
+        when(reservation.getPaymentMethod()).thenReturn(PaymentProxy.OFFLINE);
+        when(reservationRepository.findReservationById("reservation")).thenReturn(reservation);
+        var manager = new CheckInManager(ticketRepository, eventRepository, reservationRepository, null, null,
+            scanAuditRepository, auditingRepository, configurationManager, null, userRepository, null,
+            extensionManager, null, null, clockProvider, null);
+
+        assertTrue(revert ? manager.revertCheckIn(EVENT_ID, "ticket", USERNAME)
+                          : manager.manualCheckIn(EVENT_ID, "ticket", USERNAME));
+        var expectedStatus = revert ? OK_READY_TO_BE_CHECKED_IN : SUCCESS;
+        var operation = revert ? ScanAudit.Operation.REVERT : ScanAudit.Operation.SCAN;
+        var auditType = revert ? Audit.EventType.REVERT_CHECK_IN : Audit.EventType.MANUAL_CHECK_IN;
+        verify(scanAuditRepository).insert("ticket", EVENT_ID, ZonedDateTime.now(fixedClock), USERNAME, expectedStatus, operation);
+        verify(auditingRepository).insert("reservation", null, EVENT_ID, auditType,
+            Date.from(fixedClock.instant()), Audit.EntityType.TICKET, "1");
+    }
 
 }
