@@ -156,7 +156,8 @@ public class CheckInManager {
      */
     public CheckInStatus performCheckinForOnlineEvent(Ticket ticket, EventCheckInInfo event, TicketCategory tc) {
         Validate.isTrue(EventUtil.isAccessOnline(tc, event));
-        if(!tc.hasValidCheckIn(event.now(clockProvider), event.getZoneId())) {
+        var now = event.now(clockProvider);
+        if(!tc.hasValidCheckIn(now, event.getZoneId())) {
             return INVALID_TICKET_CATEGORY_CHECK_IN_DATE;
         }
         if(ticket.isCheckedIn()) {
@@ -165,7 +166,7 @@ public class CheckInManager {
         }
         int affectedCount = ticketRepository.performCheckIn(ticket.getUuid(), event.getId());
         if(affectedCount == 1) {
-            auditingRepository.insert(ticket.getTicketsReservationId(), null, event.getId(), CHECK_IN, new Date(), Audit.EntityType.TICKET, Integer.toString(ticket.getId()));
+            auditingRepository.insert(ticket.getTicketsReservationId(), null, event.getId(), CHECK_IN, Date.from(now.toInstant()), Audit.EntityType.TICKET, Integer.toString(ticket.getId()));
             extensionManager.handleTicketCheckedIn(ticket);
             return SUCCESS;
         }
@@ -212,18 +213,19 @@ public class CheckInManager {
         var optionalEvent = eventRepository.findOptionalById(eventId);
         TicketAndCheckInResult descriptor = extractStatus(eventId, ticketRepository.findByUUIDForUpdate(ticketIdentifier), ticketIdentifier, ticketCode);
         var checkInStatus = descriptor.getResult().getStatus();
+        var now = ZonedDateTime.now(clockProvider.getClock());
         if(checkInStatus == OK_READY_TO_BE_CHECKED_IN) {
             var event = optionalEvent.orElseThrow();
             checkIn(ticketIdentifier, event);
             TicketWithCategory ticket = descriptor.getTicket();
-            scanAuditRepository.insert(ticketIdentifier, eventId, ZonedDateTime.now(clockProvider.getClock()), user, SUCCESS, ScanAudit.Operation.SCAN);
-            auditingRepository.insert(ticket.getTicketsReservationId(), userRepository.findIdByUserName(user).orElse(null), eventId, CHECK_IN, new Date(), Audit.EntityType.TICKET, Integer.toString(descriptor.getTicket().getId()));
+            scanAuditRepository.insert(ticketIdentifier, eventId, now, user, SUCCESS, ScanAudit.Operation.SCAN);
+            auditingRepository.insert(ticket.getTicketsReservationId(), userRepository.findIdByUserName(user).orElse(null), eventId, CHECK_IN, Date.from(now.toInstant()), Audit.EntityType.TICKET, Integer.toString(descriptor.getTicket().getId()));
             // return also additional items and any additional info to display.
             return new SuccessfulCheckIn(ticket, getAdditionalServicesForTicket(ticket, event), purchaseContextFieldRepository.findValuesForTicketAtCheckIn(ticket.getId()), loadBoxColor(ticket));
         } else if(checkInStatus == BADGE_SCAN_ALREADY_DONE || checkInStatus == OK_READY_FOR_BADGE_SCAN) {
             var auditingStatus = checkInStatus == OK_READY_FOR_BADGE_SCAN ? BADGE_SCAN_SUCCESS : checkInStatus;
-            scanAuditRepository.insert(ticketIdentifier, eventId, ZonedDateTime.now(clockProvider.getClock()), user, auditingStatus, ScanAudit.Operation.SCAN);
-            auditingRepository.insert(descriptor.getTicket().getTicketsReservationId(), userRepository.findIdByUserName(user).orElse(null), eventId, BADGE_SCAN, new Date(), Audit.EntityType.TICKET, Integer.toString(descriptor.getTicket().getId()));
+            scanAuditRepository.insert(ticketIdentifier, eventId, now, user, auditingStatus, ScanAudit.Operation.SCAN);
+            auditingRepository.insert(descriptor.getTicket().getTicketsReservationId(), userRepository.findIdByUserName(user).orElse(null), eventId, BADGE_SCAN, Date.from(now.toInstant()), Audit.EntityType.TICKET, Integer.toString(descriptor.getTicket().getId()));
             return new TicketAndCheckInResult(null, new DefaultCheckInResult(auditingStatus, checkInStatus == OK_READY_FOR_BADGE_SCAN ? "scan successful" : "already scanned"));
         }
         return descriptor;
@@ -233,20 +235,21 @@ public class CheckInManager {
 
         Optional<Ticket> ticket = findAndLockTicket(ticketIdentifier);
         return ticket.map(t -> {
-
+            var now = ZonedDateTime.now(clockProvider.getClock());
             if(t.getStatus() == TicketStatus.TO_BE_PAID) {
                 acquire(ticketIdentifier);
             }
 
             checkIn(ticketIdentifier, eventRepository.findById(t.getEventId()));
-            scanAuditRepository.insert(ticketIdentifier, eventId, ZonedDateTime.now(clockProvider.getClock()), user, SUCCESS, ScanAudit.Operation.SCAN);
-            auditingRepository.insert(t.getTicketsReservationId(), userRepository.findIdByUserName(user).orElse(null), eventId, Audit.EventType.MANUAL_CHECK_IN, new Date(), Audit.EntityType.TICKET, Integer.toString(t.getId()));
+            scanAuditRepository.insert(ticketIdentifier, eventId, now, user, SUCCESS, ScanAudit.Operation.SCAN);
+            auditingRepository.insert(t.getTicketsReservationId(), userRepository.findIdByUserName(user).orElse(null), eventId, Audit.EventType.MANUAL_CHECK_IN, Date.from(now.toInstant()), Audit.EntityType.TICKET, Integer.toString(t.getId()));
             return true;
         }).orElse(false);
     }
 
     public boolean revertCheckIn(int eventId, String ticketIdentifier, String user) {
         return findAndLockTicket(ticketIdentifier).map(t -> {
+            var now = ZonedDateTime.now(clockProvider.getClock());
             if(t.getStatus() == TicketStatus.CHECKED_IN) {
                 TicketReservation reservation = ticketReservationRepository.findReservationById(t.getTicketsReservationId());
                 boolean onSitePayment = reservation.getPaymentMethod() == PaymentProxy.ON_SITE;
@@ -256,8 +259,8 @@ public class CheckInManager {
                 if (event.supportsLinkedAdditionalServices()) {
                     additionalServiceItemRepository.updateItemsStatusWithTicketId(t.getEventId(), t.getTicketsReservationId(), t.getId(), onSitePayment ? AdditionalServiceItem.AdditionalServiceItemStatus.TO_BE_PAID : AdditionalServiceItem.AdditionalServiceItemStatus.ACQUIRED);
                 }
-                scanAuditRepository.insert(ticketIdentifier, eventId, ZonedDateTime.now(clockProvider.getClock()), user, OK_READY_TO_BE_CHECKED_IN, ScanAudit.Operation.REVERT);
-                auditingRepository.insert(t.getTicketsReservationId(), userRepository.findIdByUserName(user).orElse(null), eventId, Audit.EventType.REVERT_CHECK_IN, new Date(), Audit.EntityType.TICKET, Integer.toString(t.getId()));
+                scanAuditRepository.insert(ticketIdentifier, eventId, now, user, OK_READY_TO_BE_CHECKED_IN, ScanAudit.Operation.REVERT);
+                auditingRepository.insert(t.getTicketsReservationId(), userRepository.findIdByUserName(user).orElse(null), eventId, Audit.EventType.REVERT_CHECK_IN, Date.from(now.toInstant()), Audit.EntityType.TICKET, Integer.toString(t.getId()));
                 extensionManager.handleTicketRevertCheckedIn(ticketRepository.findByUUID(ticketIdentifier));
                 return true;
             }
