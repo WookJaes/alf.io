@@ -644,3 +644,17 @@ val e2eValidation = tasks.register<Test>("e2eValidation") {
         environment("VALIDATION_APP_JAR", tasks.bootJar.get().archiveFile.get().asFile.absolutePath)
     }
 }
+
+tasks.register<Test>("migrationValidation") {
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    description = "Upgrades a pinned previous-release DB using the current app and verifies preservation."
+    dependsOn(tasks.bootJar)
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    filter { includeTestsMatching("alfio.e2e.MigrationValidatorTest") }
+    environment("MIGRATION_TEST", "true")
+    outputs.upToDateWhen { false }
+    doFirst {
+        environment("VALIDATION_APP_JAR", tasks.bootJar.get().archiveFile.get().asFile.absolutePath)
+    }
+}

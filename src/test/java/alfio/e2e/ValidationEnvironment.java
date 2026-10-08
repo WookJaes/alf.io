@@ -40,6 +40,7 @@ public final class ValidationEnvironment implements AutoCloseable {
     private final Path temporaryDirectory;
     private Process app;
     private String baseUrl;
+    private Path appLog;
 
     public ValidationEnvironment() throws IOException {
         temporaryDirectory = Files.createTempDirectory("alfio-validation-");
@@ -64,6 +65,7 @@ public final class ValidationEnvironment implements AutoCloseable {
         }
         baseUrl = "http://127.0.0.1:" + port;
         var log = temporaryDirectory.resolve("app-" + System.nanoTime() + ".log");
+        appLog = log;
         var builder = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
             "-Xmx768m", "-jar", jar.toAbsolutePath().toString(),
             "--server.address=127.0.0.1", "--server.port=" + port,
@@ -100,6 +102,14 @@ public final class ValidationEnvironment implements AutoCloseable {
         Files.createDirectories(Path.of("build", "validation"));
         Files.copy(log, Path.of("build", "validation", "readiness-failure.log"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         throw new IllegalStateException("Application failed readiness. Temporary log: " + log);
+    }
+
+    public void assertNoDataMigrationFailure() throws IOException {
+        if (Files.readString(appLog).contains("unable to perform data migration")) {
+            Files.createDirectories(Path.of("build", "validation"));
+            Files.copy(appLog, Path.of("build", "validation", "data-migration-failure.log"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            throw new IllegalStateException("The app swallowed a data migration failure");
+        }
     }
 
     public void seedAdministrator() throws Exception {
