@@ -47,7 +47,7 @@ plugins {
     java
     idea
     `project-report`
-    alias(libs.plugins.kordamp.jacoco)
+    jacoco
     alias(libs.plugins.gradle.versions)
     alias(libs.plugins.hierynomus.license)
     alias(libs.plugins.gradle.release)
@@ -420,14 +420,9 @@ tasks.register<Copy>("copyFrontendDev") {
 
 // -- code-coverage
 
-// 0.8.11 (the version the kordamp plugin defaults to) cannot instrument
-// class file major version 69 (Java 25)
-config {
-    coverage {
-        jacoco {
-            toolVersion = "0.8.15"
-        }
-    }
+// Java 25 requires a compatible JaCoCo agent. Use Gradle's built-in plugin.
+jacoco {
+    toolVersion = "0.8.15"
 }
 
 tasks.jacocoTestReport {
@@ -632,5 +627,37 @@ abstract class Mjml4jTransformTask : DefaultTask() {
                 File(target, outputName).writeText(templateOutput, StandardCharsets.UTF_8)
             }
         }
+    }
+}
+
+// Dedicated opt-in validation: ordinary product checks keep their existing skip conditions.
+val e2eValidation = tasks.register<Test>("e2eValidation") {
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    description = "Builds the current app and validates the local Chrome reservation flow."
+    dependsOn(tasks.bootJar)
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    filter {
+        includeTestsMatching("alfio.e2e.NormalFlowE2ETest")
+        includeTestsMatching("alfio.e2e.ValidationBrowserTest")
+    }
+    environment("ALFIO_RUN_E2E", "true")
+    outputs.upToDateWhen { false }
+    doFirst {
+        environment("VALIDATION_APP_JAR", tasks.bootJar.get().archiveFile.get().asFile.absolutePath)
+    }
+}
+
+tasks.register<Test>("migrationValidation") {
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    description = "Upgrades a pinned previous-release DB using the current app and verifies preservation."
+    dependsOn(tasks.bootJar)
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    filter { includeTestsMatching("alfio.e2e.MigrationValidatorTest") }
+    environment("MIGRATION_TEST", "true")
+    outputs.upToDateWhen { false }
+    doFirst {
+        environment("VALIDATION_APP_JAR", tasks.bootJar.get().archiveFile.get().asFile.absolutePath)
     }
 }

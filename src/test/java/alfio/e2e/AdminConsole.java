@@ -234,11 +234,7 @@ class AdminConsole {
             organizationSelect.selectByVisibleText(firstOrganization.getText());
         }
 
-        var location = driver.findElement(By.id("location"));
-        location.sendKeys(event.location());
-        // location is geocoded on blur, which can overwrite the time zone
-        location.sendKeys(Keys.TAB);
-        waitForGeolocation();
+        new Select(driver.findElement(By.id("format"))).selectByValue("string:ONLINE");
         selectBrowserTimeZone();
 
         driver.findElement(By.id("description")).sendKeys(event.description());
@@ -318,6 +314,10 @@ class AdminConsole {
     private void fillPrices(EventDefinition event) {
         // the "Seats and payment info" section is displayed once the organization is selected
         wait.until(elementToBeClickable(By.id("availableSeats"))).sendKeys(Integer.toString(event.maxTickets()));
+        if ("0".equals(event.price())) {
+            selectElement(driver.findElement(By.cssSelector("input[name=freeOfCharge][data-ng-value=true]")), browserWebDriver);
+            return;
+        }
         driver.findElement(By.id("regularPrice")).sendKeys(event.price());
         var currency = driver.findElement(By.id("currency"));
         currency.sendKeys(event.currency());

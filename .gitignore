@@ -27,3 +27,5 @@ lsp
 # 하네스의 민감한 원본 로그·임시 증거
 ai/local-evidence/
 ai/tests/__pycache__/
+# 검증 도구의 Python 임시 캐시
+scripts/validation/__pycache__/
