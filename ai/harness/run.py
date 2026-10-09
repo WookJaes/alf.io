@@ -145,15 +145,17 @@ def snapshot(root, plan):
             'inputs': digest(inputs), 'environment': digest([env, platform.platform(), sys.version])}
 
 
-def counts_unittest(output):
+def result_unittest(output):
     matches = re.findall(r'^Ran (\d+) tests? in .+$', output, re.M)
     endings = re.findall(r'^(OK(?: \([^\n]*\))?|FAILED \([^\n]*\))\s*$', output, re.M)
     if len(matches) != 1 or len(endings) != 1:
         raise Invalid('unittest 최종 요약 확인 불가: 한 명령에서 한 suite를 실행')
-    details = dict((k, int(v)) for k, v in re.findall(r'(failures|errors|skipped)=(\d+)', endings[0]))
-    return {'executed': int(matches[0]) - details.get('skipped', 0),
-            'failures': details.get('failures', 0), 'errors': details.get('errors', 0),
-            'skipped': details.get('skipped', 0)}
+    details = dict((k, int(v)) for k, v in re.findall(
+        r'(failures|errors|skipped|unexpected successes)=(\d+)', endings[0]))
+    counts = {'executed': int(matches[0]) - details.get('skipped', 0),
+              'failures': details.get('failures', 0), 'errors': details.get('errors', 0),
+              'skipped': details.get('skipped', 0)}
+    return counts, ('FAILED' if endings[0].startswith('FAILED') else 'OK'), details.get('unexpected successes', 0)
 
 
 def counts_junit(path):
@@ -246,6 +248,7 @@ class Run:
         state['results'][item_id] = result
         self.save(state)
         counts, error, cached = None, None, False
+        test_outcome, unexpected_successes = None, 0
         # 원본 로그는 디스크에 기록하지 않는다. unittest 요약만 메모리에서 추출한다.
         try:
             process = subprocess.Popen(item['command'], cwd=self.root, stdout=subprocess.PIPE,
@@ -261,7 +264,10 @@ class Run:
             exit_code = process.wait()
             process.stdout.close()
             if item['kind'] == 'test':
-                counts = counts_junit(report) if report else counts_unittest(tail.decode('utf-8', errors='replace'))
+                if report:
+                    counts = counts_junit(report)
+                else:
+                    counts, test_outcome, unexpected_successes = result_unittest(tail.decode('utf-8', errors='replace'))
         except OSError:
             exit_code = -1
             error = '명령 실행 불가: 실행 파일·권한 확인'
@@ -269,9 +275,14 @@ class Run:
             error = str(exc)  # 요약 오류여도 실제 프로세스 종료 코드는 보존한다.
         result.update(ended=now(), exit_code=exit_code, counts=counts,
                       summary=error or ('명령 성공' if exit_code == 0 else '명령 실패'))
-        passed = exit_code == 0 and not cached and (item['kind'] != 'test' or valid_counts(counts))
+        if item.get('adapter') == 'unittest':
+            result.update(test_outcome=test_outcome, unexpected_successes=unexpected_successes)
+        summary_passed = test_outcome != 'FAILED' and unexpected_successes == 0
+        passed = exit_code == 0 and not cached and summary_passed and (item['kind'] != 'test' or valid_counts(counts))
         if cached:
             result['summary'] = '캐시·미실행 표시 감지: 실제 실행 옵션으로 재검증'
+        elif not summary_passed:
+            result['summary'] = 'unittest 최종 요약 FAILED: 실패 또는 예상 밖 성공을 확인하고 재검증'
         elif item['kind'] == 'test' and not valid_counts(counts) and not error:
             result['summary'] = '실제 테스트 0건·스킵만·실패·오류: 테스트 보완'
         result['status'] = 'passed' if passed else 'failed'
@@ -351,6 +362,9 @@ class Run:
             issues.append('실제 명령 성공 근거 부족: 재실행')
         if item['kind'] == 'test' and not valid_counts(result.get('counts')):
             issues.append('테스트 0건·실패·오류·건수 누락: 실제 테스트 실행')
+        if item.get('adapter') == 'unittest' and (result.get('test_outcome') != 'OK'
+                or type(result.get('unexpected_successes')) is not int or result['unexpected_successes'] != 0):
+            issues.append('unittest 성공 요약 근거 부족·예상 밖 성공: 재실행')
         if result.get('mode') == 'reused' or 'reuse' in result:
             reuse = result.get('reuse')
             if not isinstance(reuse, dict) or not all(nonempty(reuse.get(k)) for k in ('source', 'reason', 'at')):
@@ -444,7 +458,7 @@ def main(argv=None):
                     for key in ('condition', 'command', 'procedure'):
                         if key in item:
                             print('  ' + key + ': ' + str(item[key]))
-                    for key in ('started', 'ended', 'exit_code', 'counts', 'summary', 'scope', 'reporter', 'reuse', 'snapshot'):
+                    for key in ('started', 'ended', 'exit_code', 'counts', 'test_outcome', 'unexpected_successes', 'summary', 'scope', 'reporter', 'reuse', 'snapshot'):
                         if key in result:
                             print('  ' + key + ': ' + str(result[key]))
             for row in rows:

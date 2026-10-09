@@ -75,7 +75,7 @@ python3 -B ai/harness/run.py reuse next-run regression --source issue-17 --reaso
 
 | 종류 | 통과에 필요한 근거 |
 |---|---|
-| test / unittest | 실제 실행 명령 영수증, 단일 unittest 최종 요약, 실행 건수 1 이상, 실패·오류 0 |
+| test / unittest | 실제 실행 명령 영수증, 단일 unittest 최종 요약 OK, 실행 건수 1 이상, 실패·오류·예상 밖 성공 0. 종료 코드 0이어도 FAILED 요약은 거부 |
 | test / junit | 새 보고서의 실제 testcase, 실행 건수 1 이상, 실패·오류 0, 보고서 경로·체크섬 |
 | build | 실제 명령 종료 0, 실행 영수증, 캐시·미실행 표시 없음 |
 | static | 실제 명령 종료 0, 실행 영수증, 캐시·미실행 표시 없음 |

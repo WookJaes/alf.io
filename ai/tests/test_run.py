@@ -145,6 +145,42 @@ class RunTests(unittest.TestCase):
         self.assertFalse(self.run.execute('test'))
         self.assertEqual(self.run.load()[1]['results']['test']['exit_code'], 0)
 
+    def test_zero_exit_runner_failed_summary_blocks_gate(self):
+        for item in self.plan['checks']:
+            item['required'] = item['id'] == 'test'
+        cases = (
+            (' def test_failure(self): self.fail()', 1, 0, 0),
+            (' def test_error(self): raise RuntimeError()', 0, 1, 0),
+            (' @unittest.expectedFailure\n def test_unexpected(self): pass', 0, 0, 1),
+        )
+        for body, failures, errors, unexpected in cases:
+            with self.subTest(body=body):
+                code = ('import unittest\nclass T(unittest.TestCase):\n' + body
+                        + '\nunittest.TextTestRunner().run(unittest.defaultTestLoader.loadTestsFromTestCase(T))')
+                self.plan['checks'][0]['command'] = [sys.executable, '-c', code]
+                self.save_plan()
+                self.assertEqual(harness.main(['--root', str(self.root), 'run', 'run-1', 'test']), 1)
+                result = self.run.load()[1]['results']['test']
+                self.assertEqual(result['exit_code'], 0)
+                self.assertEqual(result['status'], 'failed')
+                self.assertEqual(result['test_outcome'], 'FAILED')
+                self.assertEqual(result['unexpected_successes'], unexpected)
+                self.assertEqual(result['counts'], {'executed': 1, 'failures': failures, 'errors': errors, 'skipped': 0})
+                self.assertEqual(harness.main(['--root', str(self.root), 'gate', 'run-1']), 1)
+
+    def test_zero_exit_runner_success_summary_passes_gate(self):
+        for item in self.plan['checks']:
+            item['required'] = item['id'] == 'test'
+        code = ('import unittest\nclass T(unittest.TestCase):\n def test_success(self): pass'
+                '\nunittest.TextTestRunner().run(unittest.defaultTestLoader.loadTestsFromTestCase(T))')
+        self.plan['checks'][0]['command'] = [sys.executable, '-c', code]
+        self.save_plan()
+        self.assertTrue(self.run.execute('test'))
+        result = self.run.load()[1]['results']['test']
+        self.assertEqual(result['test_outcome'], 'OK')
+        self.assertEqual(result['unexpected_successes'], 0)
+        self.assertEqual(harness.main(['--root', str(self.root), 'gate', 'run-1']), 0)
+
     def test_receipt_missing_modified_and_forged_pass(self):
         self.assertTrue(self.run.execute('build'))
         _, state = self.run.load()
