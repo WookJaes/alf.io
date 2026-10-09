@@ -8,6 +8,8 @@
 |---|---|
 | ai/WORKFLOW.md, routing.md | 현재 Codex의 작업 절차와 역할 선택 |
 | ai/roles/ | 역할 7개의 책임; 요청 시 필요한 문서만 조회 |
+| ai/harness/ | [로컬 결과·게이트·무효화·재개 명령](local-validation.md) |
+| ai/local-state/ | Git 제외 선언·최소 실행 상태·근거; CI 전송 없음 |
 | ai/templates/ | 통합 작업 기록, 실패·기억·PR 리뷰 글·대댓글 양식 |
 | ai/memory/ | 확인된 지식과 인덱스 |
 | ai/tests/ | 문서·기억·증거 검사와 그 회귀 테스트 |
@@ -43,7 +45,7 @@ ai/roles/review.md와 ai/templates/pr-review-reply.md의 리뷰어 양식에 따
 
 ## 검사
 
-Python 표준 라이브러리만 사용한다. 검사 도구는 로컬 파일만 읽고 문서 링크·역할 파일·기억 근거·증거 체크섬을 확인한다. 모델을 호출하거나 에이전트 상태 전환을 강제하지 않는다.
+Python 표준 라이브러리만 사용한다. `ai/harness/run.py`는 명시한 로컬 명령을 실행하고 결과를 검사한다. `ai/tests/check.py`는 로컬 파일만 읽고 문서 링크·역할 파일·기억 근거·증거 체크섬을 확인한다. 모델을 호출하거나 에이전트 상태 전환을 강제하지 않는다.
 
 ```sh
 python -B ai/tests/check.py

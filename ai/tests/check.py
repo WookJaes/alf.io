@@ -10,7 +10,8 @@ ROLES = ('documentation', 'implementation', 'diagnosis', 'review',
 REQUIRED = ('AGENTS.md', 'ai/WORKFLOW.md', 'ai/routing.md',
             'ai/templates/work.md', 'ai/templates/failure.md',
             'ai/templates/memory.md', 'ai/memory/index.md',
-            'docs/harness/README.md')
+            'docs/harness/README.md', 'docs/harness/local-validation.md',
+            'ai/harness/run.py', 'ai/tests/test_run.py')
 
 
 def local_targets(document):
@@ -32,6 +33,8 @@ def validate(root):
             problems.append('필수 문서 누락: ' + name)
     documents = ([root / 'AGENTS.md'] + list((root / 'ai').rglob('*.md'))
                  + list((root / 'docs/harness').rglob('*.md')))
+    documents = [d for d in documents if not any(part in ('local-state', 'local-evidence')
+                                               for part in d.relative_to(root).parts)]
     for document in documents:
         if not document.is_file():
             continue
