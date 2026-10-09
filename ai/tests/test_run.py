@@ -374,10 +374,22 @@ class RunTests(unittest.TestCase):
         with self.assertRaises(harness.Invalid): harness.Run(self.root, 'blocked').init(self.plan)
 
     def test_cli_full_flow_with_synthetic_resources(self):
+        self.assert_cli_flow()
+
+    def test_cli_full_flow_with_inherited_cp949_environment(self):
+        with patch.dict(os.environ, {'PYTHONUTF8': '0', 'PYTHONIOENCODING': 'cp949'}):
+            self.assert_cli_flow()
+
+    def test_cli_full_flow_with_cp949_output(self):
+        self.assert_cli_flow(output_encoding='cp949')
+
+    def assert_cli_flow(self, output_encoding='utf-8'):
         script = str(Path(harness.__file__).resolve())
+        # 부모 기본 인코딩·CI 설정에 기대지 않고 자식 출력과 읽기를 맞춘다.
+        child_env = dict(os.environ, PYTHONUTF8='0', PYTHONIOENCODING=output_encoding)
         def cli(*args):
             return subprocess.run([sys.executable, '-B', script, '--root', str(self.root), *args],
-                                  capture_output=True, text=True, encoding='utf-8')
+                                  capture_output=True, text=True, encoding=output_encoding, env=child_env)
         self.assertEqual(cli('gate', 'run-1').returncode, 1)
         self.assertEqual(cli('run', 'run-1', 'test').returncode, 0)
         self.assertEqual(cli('run', 'run-1', 'build').returncode, 0)
