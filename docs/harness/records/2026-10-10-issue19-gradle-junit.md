@@ -35,3 +35,14 @@
 - 초기 네트워크/파일 권한: sandbox 내 gh 조회와 fetch 실패. 승인된 범위의 확장 실행으로 조회·fetch 성공. 작업 차단 없음.
 - 생략 검증: 제품 화면 변경 없음으로 브라우저 제외. DB·E2E 변경 없음으로 추가 실행 제외.
 - 커밋 계획: 사용자 지정 총 3개 커밋. 이 단계는 이 기록 파일만 커밋하며 구현은 아직 변경하지 않았다. 푸시·PR·외부 게시 없음.
+
+## 2단계: Gradle 실행 판정 수정·재검증
+
+- 변경: test 항목의 `gradle_tasks` 전체 경로 배열을 검증하고, 출력 줄을 스트리밍하여 대상별 상태를 보관한다. 다른 작업 상태는 제외한다. 대상 누락·중복·미실행·스킵·실패·알 수 없는 상태를 거부한다. 대상 상태는 영수증과 gate/resume에서도 확인한다. 종료 코드·새 단일 XML·실제 건수를 함께 요구한다. 일반 build/static 판정과 CLI 인자는 유지한다.
+- 사용 안내: 대상 선언·plain 콘솔·거부 이유를 추가했다. 이 커밋에는 다중 보고서 집계를 포함하지 않았다.
+- 검증 대상: 첫 커밋 `11fce8817` HEAD 위의 2단계 작업 트리. `issue19-single`에서 구조·회귀·product·자체 QA/Review 모두 유효, gate/resume 각 0.
+- 명령: `python3 -B ai/local-state/issue19-pre/verify.py single issue19-single` (하네스 init/run 연결). 구조 검사 `python3 -B ai/tests/check.py` 0; 회귀 `python3 -B -m unittest discover -s ai/tests -p 'test_*.py'` 0, 54건·실패/오류/스킵 0.
+- 실제 제품 명령: 재현과 같은 Gradle 명령에서 `--tests alfio.util.TemplateResourceTest`만 선택, 새 출력 `ai/local-state/issue19-single-xml`. 종료 0, :test EXECUTED, 단일 XML 1개·실행 2건·실패/오류/스킵 0. 하네스와 원본 testcase 대조 일치.
+- QA/Review: begin 이후 XML·최소 결과·diff와 범위 대조, 현재 Codex 자체 수행으로 record. 독립 수행 아님. 대상 작업 캐시/스킵/상태 확인 불가 및 정상 단일 XML·기존 unittest/CLI 회귀 확인.
+- 준비/도구 실패: py_compile은 호스트 Python의 외부 캐시 쓰기 권한 때문에 미실행; unittest의 모듈 import/실행으로 문법 확인. 테스트 삽입용 stdin 스크립트 인코딩 실패 후 UTF-8을 명시하여 수정·54건 재검증 완료. 제품·하네스 테스트 실패 없음.
+- 커밋 경계: 2단계 gate는 `11fce8817`과 해당 미커밋 내용의 검증이다. 다음 커밋으로 HEAD가 바뀌면 이 gate를 새 HEAD의 통과로 주장하지 않는다. 3단계에서 새 실행으로 갱신한다.

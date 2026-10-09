@@ -96,6 +96,14 @@ def validate_plan(plan):
                     raise Invalid('test adapter는 unittest 또는 junit')
                 if item['adapter'] == 'junit' and not nonempty(item.get('report')):
                     raise Invalid('JUnit 보고서 상대 경로 필요')
+                if 'gradle_tasks' in item:
+                    tasks = item['gradle_tasks']
+                    if (not isinstance(tasks, list) or not tasks
+                            or not all(isinstance(t, str) and re.fullmatch(r'(?::[\w.-]+)+', t) for t in tasks)
+                            or len(set(tasks)) != len(tasks)):
+                        raise Invalid('gradle_tasks는 중복 없는 전체 작업 경로 배열 필요 (:test 등)')
+                if is_gradle(command) and not item.get('gradle_tasks'):
+                    raise Invalid('Gradle 테스트는 gradle_tasks에 검증 대상 작업 선언 필요')
     if not any(c['required'] for c in plan['checks']):
         raise Invalid('필수 검증 항목이 최소 한 개 필요')
     return plan
@@ -169,6 +177,59 @@ def counts_junit(path):
                 'skipped': sum(c.find('skipped') is not None for c in cases)}
     except (OSError, ET.ParseError) as exc:
         raise Invalid('JUnit 보고서 누락·형식 오류') from exc
+
+
+def is_gradle(command):
+    return Path(command[0]).name.lower() in {'gradle', 'gradlew', 'gradle.bat', 'gradlew.bat'}
+
+
+class ExecutionOutput:
+    """출력 전체를 보관하지 않고 줄별 작업 상태와 제한된 최종 요약을 수집한다."""
+    def __init__(self, item):
+        self.item = item
+        self.tail = b''
+        self.pending = b''
+        self.cached = False
+        self.tasks = {}
+        self.saw_gradle = False
+
+    def feed(self, chunk):
+        self.tail = (self.tail + chunk)[-65536:]
+        self.pending += chunk
+        while b'\n' in self.pending:
+            line, self.pending = self.pending.split(b'\n', 1)
+            self.line(line)
+        # 비정상적으로 긴 줄도 전체 로그로 보관하지 않는다. 작업 줄로 해석하지 않는다.
+        if len(self.pending) > 65536:
+            self.line(self.pending)
+            self.pending = b''
+
+    def line(self, raw):
+        line = raw.decode('utf-8', errors='replace').strip()
+        match = re.fullmatch(r'> Task ((?::[\w.-]+)+)(?:\s+(.+))?', line)
+        if match:
+            self.saw_gradle = True
+            task, state = match.group(1), match.group(2) or 'EXECUTED'
+            if task in self.item.get('gradle_tasks', []):
+                self.tasks[task] = 'AMBIGUOUS' if task in self.tasks else state
+            if self.item['kind'] == 'test':
+                return  # 다른 Gradle 작업 상태는 테스트 전체의 캐시 판정이 아니다.
+        if re.search(r'UP-TO-DATE|FROM-CACHE|NO-SOURCE', line):
+            self.cached = True
+
+    def finish(self):
+        if self.pending:
+            self.line(self.pending)
+            self.pending = b''
+        tasks = self.item.get('gradle_tasks')
+        if tasks:
+            if any(self.tasks.get(t) != 'EXECUTED' for t in tasks):
+                return '대상 Gradle 작업 캐시·미실행·스킵 또는 실행 상태 확인 불가: --console=plain으로 재검증'
+        elif self.item.get('adapter') == 'junit' and (self.saw_gradle or is_gradle(self.item['command'])):
+            return 'Gradle 테스트 대상 확인 불가: gradle_tasks 선언 필요'
+        if self.cached:
+            return '캐시·미실행 표시 감지: 실제 실행 옵션으로 재검증'
+        return None
 
 
 def valid_counts(counts):
@@ -247,40 +308,41 @@ class Run:
                   'mode': 'executed', 'snapshot': before, 'started': now(), 'command': item['command']}
         state['results'][item_id] = result
         self.save(state)
-        counts, error, cached = None, None, False
+        counts, error = None, None
+        output = ExecutionOutput(item)
         test_outcome, unexpected_successes = None, 0
         # 원본 로그는 디스크에 기록하지 않는다. unittest 요약만 메모리에서 추출한다.
         try:
             process = subprocess.Popen(item['command'], cwd=self.root, stdout=subprocess.PIPE,
                                        stderr=subprocess.STDOUT)
-            tail = b''
             while True:
                 chunk = process.stdout.read(4096)
                 if not chunk:
                     break
-                tail = (tail + chunk)[-65536:]
-                if re.search(rb'UP-TO-DATE|FROM-CACHE|NO-SOURCE', tail):
-                    cached = True
+                output.feed(chunk)
             exit_code = process.wait()
             process.stdout.close()
             if item['kind'] == 'test':
                 if report:
                     counts = counts_junit(report)
                 else:
-                    counts, test_outcome, unexpected_successes = result_unittest(tail.decode('utf-8', errors='replace'))
+                    counts, test_outcome, unexpected_successes = result_unittest(output.tail.decode('utf-8', errors='replace'))
         except OSError:
             exit_code = -1
             error = '명령 실행 불가: 실행 파일·권한 확인'
         except Invalid as exc:
             error = str(exc)  # 요약 오류여도 실제 프로세스 종료 코드는 보존한다.
+        execution_error = output.finish()
+        if item.get('gradle_tasks'):
+            result['gradle_tasks'] = output.tasks
         result.update(ended=now(), exit_code=exit_code, counts=counts,
                       summary=error or ('명령 성공' if exit_code == 0 else '명령 실패'))
         if item.get('adapter') == 'unittest':
             result.update(test_outcome=test_outcome, unexpected_successes=unexpected_successes)
         summary_passed = test_outcome != 'FAILED' and unexpected_successes == 0
-        passed = exit_code == 0 and not cached and summary_passed and (item['kind'] != 'test' or valid_counts(counts))
-        if cached:
-            result['summary'] = '캐시·미실행 표시 감지: 실제 실행 옵션으로 재검증'
+        passed = exit_code == 0 and not error and not execution_error and summary_passed and (item['kind'] != 'test' or valid_counts(counts))
+        if execution_error:
+            result['summary'] = execution_error
         elif not summary_passed:
             result['summary'] = 'unittest 최종 요약 FAILED: 실패 또는 예상 밖 성공을 확인하고 재검증'
         elif item['kind'] == 'test' and not valid_counts(counts) and not error:
@@ -360,6 +422,8 @@ class Run:
         elif (result.get('mode') not in {'executed', 'reused'} or result.get('exit_code') != 0
               or type(result.get('exit_code')) is not int or result.get('command') != item['command']):
             issues.append('실제 명령 성공 근거 부족: 재실행')
+        if item.get('gradle_tasks') and result.get('gradle_tasks') != {t: 'EXECUTED' for t in item['gradle_tasks']}:
+            issues.append('대상 Gradle 작업 실행 근거 부족: 재실행')
         if item['kind'] == 'test' and not valid_counts(result.get('counts')):
             issues.append('테스트 0건·실패·오류·건수 누락: 실제 테스트 실행')
         if item.get('adapter') == 'unittest' and (result.get('test_outcome') != 'OK'

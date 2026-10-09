@@ -352,6 +352,79 @@ class RunTests(unittest.TestCase):
             self.save_plan()
             self.assertFalse(self.run.execute('test'))
 
+    def test_unittest_other_gradle_tasks_do_not_reject_real_tests(self):
+        for marker in ('> Task :compileJava UP-TO-DATE', '> Task :compileJava FROM-CACHE',
+                       '> Task :processTestResources NO-SOURCE'):
+            with self.subTest(marker=marker):
+                self.plan['checks'][0]['command'] = [sys.executable, '-c',
+                    'import unittest\nprint(' + repr(marker) + ', flush=True)\nclass T(unittest.TestCase):\n def test_real(self): pass\nunittest.main()']
+                self.save_plan()
+                self.assertTrue(self.run.execute('test'))
+                self.assertEqual(self.run.inspect()[0]['reasons'], [])
+
+    def test_gradle_single_junit_target_states_and_exit_code(self):
+        check = self.plan['checks'][0]
+        states = ('', 'UP-TO-DATE', 'FROM-CACHE', 'NO-SOURCE', 'SKIPPED', 'FAILED', 'unknown', None)
+        for index, target in enumerate(states):
+            with self.subTest(target=target):
+                report = f'ai/local-state/gradle-{index}.xml'
+                lines = '> Task :compileJava UP-TO-DATE\n> Task :processTestResources NO-SOURCE\n> Task :other FROM-CACHE\n'
+                if target is not None:
+                    lines += '> Task :module:test' + (' ' + target if target else '')
+                check.update(adapter='junit', report=report, gradle_tasks=[':module:test'],
+                             command=[sys.executable, '-c',
+                                      f'from pathlib import Path; print({lines!r}); Path({report!r}).write_text("<testsuite><testcase/></testsuite>")'])
+                self.save_plan()
+                self.assertEqual(self.run.execute('test'), target == '')
+                result = self.run.load()[1]['results']['test']
+                self.assertEqual(result['exit_code'], 0)
+                self.assertEqual(result['counts']['executed'], 1)
+                if target != '': self.assertIn('대상', result['summary'])
+        check['report'] = 'ai/local-state/gradle-exit.xml'
+        check['command'] = [sys.executable, '-c',
+            'from pathlib import Path; print("> Task :module:test"); Path("ai/local-state/gradle-exit.xml").write_text("<testsuite><testcase/></testsuite>"); raise SystemExit(7)']
+        self.save_plan()
+        self.assertFalse(self.run.execute('test'))
+        self.assertEqual(self.run.load()[1]['results']['test']['exit_code'], 7)
+
+    def test_gradle_missing_declaration_and_task_evidence(self):
+        check = self.plan['checks'][0]
+        check.update(adapter='junit', report='ai/local-state/unknown.xml', command=['./gradlew', 'test'])
+        with self.assertRaises(harness.Invalid): harness.validate_plan(self.plan)
+        check['command'] = [sys.executable, '-c',
+            'from pathlib import Path; print("> Task :test"); Path("ai/local-state/unknown.xml").write_text("<testsuite><testcase/></testsuite>")']
+        self.save_plan()
+        self.assertFalse(self.run.execute('test'))
+        self.assertIn('gradle_tasks', self.run.load()[1]['results']['test']['summary'])
+        check['gradle_tasks'] = [':test']
+        check['report'] = 'ai/local-state/evidence.xml'
+        check['command'][2] = check['command'][2].replace('unknown.xml', 'evidence.xml')
+        self.save_plan()
+        self.assertTrue(self.run.execute('test'))
+        _, state = self.run.load()
+        result = state['results']['test']
+        result.pop('gradle_tasks')
+        self.run.attest(state, check, {k: v for k, v in result.items() if k not in {'receipt', 'receipt_hash'}})
+        self.assertTrue(self.run.inspect()[0]['reasons'])
+
+    def test_gradle_stream_split_tail_limit_and_all_targets(self):
+        item = dict(self.plan['checks'][0], gradle_tasks=[':test', ':module:test'])
+        output = harness.ExecutionOutput(item)
+        for chunk in (b'> Task :compileJava UP-', b'TO-DATE\n> Task :te', b'st\n',
+                      b'x' * 70000 + b'\n', b'> Task :module:test'):
+            output.feed(chunk)
+        self.assertIsNone(output.finish())
+        self.assertEqual(output.tasks, {':test': 'EXECUTED', ':module:test': 'EXECUTED'})
+        for lines in (b'> Task :test\n', b'> Task :test\n> Task :module:test SKIPPED\n',
+                      b'> Task :test\n> Task :test UP-TO-DATE\n> Task :module:test\n'):
+            output = harness.ExecutionOutput(item); output.feed(lines)
+            self.assertIsNotNone(output.finish())
+
+    def test_gradle_task_declaration_validation(self):
+        for tasks in ([], ':test', [':test', ':test'], ['test'], [None]):
+            self.plan['checks'][0]['gradle_tasks'] = tasks
+            with self.assertRaises(harness.Invalid): harness.validate_plan(self.plan)
+
     def test_automatic_change_during_command_invalidates(self):
         self.plan['checks'][1]['command'] = [sys.executable, '-c', 'from pathlib import Path; Path("product.txt").write_text("changed during run")']
         self.save_plan()
