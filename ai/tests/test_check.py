@@ -67,6 +67,21 @@ class HarnessChecks(unittest.TestCase):
         (self.root / 'ai/roles/review.md').unlink()
         self.assertTrue(any('필수 문서 누락' in e for e in validate(self.root)))
 
+    def test_common_responsibilities_and_runtime_are_required(self):
+        self.assertEqual(ROLES, ('diagnosis', 'review', 'verification', 'memory'))
+        for name in ('ai/harness/run.py', 'ai/tests/test_run.py', 'docs/harness/local-validation.md'):
+            with self.subTest(name=name):
+                path = self.root / name
+                original = path.read_bytes()
+                path.unlink()
+                self.assertTrue(any(name in e for e in validate(self.root)))
+                path.write_bytes(original)
+
+    def test_local_private_evidence_is_not_scanned(self):
+        self.write('ai/local-state/private.md', '[임시 상대 링크](nonexistent.md)')
+        self.write('ai/local-evidence/private.md', '[임시 상대 링크](nonexistent.md)')
+        self.assertEqual(validate(self.root), [])
+
     def test_confirmed_memory_without_evidence(self):
         self.write('ai/memory/test.md', '- 상태: confirmed\n근거 없음\n')
         self.assertTrue(any('확정 기억의 로컬 근거 누락' in e for e in validate(self.root)))

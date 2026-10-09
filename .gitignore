@@ -29,3 +29,6 @@ ai/local-evidence/
 ai/tests/__pycache__/
 # 검증 도구의 Python 임시 캐시
 scripts/validation/__pycache__/
+# 하네스 최소 실행 상태·결과·로컬 보고서
+ai/local-state/
+ai/harness/__pycache__/
