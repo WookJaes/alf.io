@@ -1,14 +1,14 @@
 # 하네스 Gradle 실행 판정·다중 JUnit 집계 작업 기록
 
-- 작업 ID / 날짜 / 상태: issue19 · 2026-10-10 · in_progress
+- 작업 ID / 날짜 / 상태: issue19 · 2026-10-10 · completed
 - 요청·완료 기준·수정 범위: [이슈 #19](https://github.com/WookJaes/alf.io/issues/19). 대상 Gradle 작업 판정과 다중 XML 집계만 수정한다. 제품 코드·E2E·DB 환경·기존 실험·노션은 제외한다.
 - 실행 모드·실제 담당: 현재 Codex 순차 구현·자체 Review·QA. 하위 에이전트 없음, 독립 수행 아님.
 - 브랜치·기준 HEAD·시작 시 기존 변경: `fix/19-harness-gradle-junit`, `04d34e1de7788f394522761df59f2fdd5b191187`. 시작 main/작업 트리 깨끗함. fetch로 최신 origin/main과 일치 확인 후 분기.
 - 재현 환경·필수 도구 버전·명령 실행 기준 디렉터리: macOS arm64, Python 3.9.6, Corretto Java 25.0.4.1, 저장소 루트. 기존 Gradle Wrapper 사용.
 - 검증 대상 코드·증거 위치·검증 후 변경 여부: 아래 재현은 출발 HEAD의 `ai/harness/run.py`, 구현 변경 전이다. 실행 영수증·최소 요약·합성 자원은 Git 제외 `ai/local-state/issue19-*`에만 보관한다. 원본 로그·결과 JSON은 커밋하지 않는다.
-- 계획·현재 단계: 재현 → 기록만 커밋 → 단일 보고서 Gradle 판정 수정·검증·커밋 → 다중 집계·실제 Gradle·최종 게이트·커밋.
-- 로컬 실행 ID·선언 경로·필수 항목·Review/QA 독립 수행 요구: 재현 `issue19-before`, `ai/local-state/issue19-before/plan.json`, product 필수. 최종 선언은 구현 후 별도 ID 사용, Review/QA `independent: false`.
-- gate/resume 판정 요약: 수정 전 product failed, 실제 종료 0인데 캐시 표시 때문에 거부. 최종 게이트는 아직 미실행.
+- 계획·현재 단계: 재현 기록과 단일 판정 수정 커밋 완료. 다중 집계·실제 Gradle·최종 게이트 확인 완료, 마지막 커밋으로 저장한다.
+- 로컬 실행 ID·선언 경로·필수 항목·Review/QA 독립 수행 요구: 재현 `issue19-before`, 단일 `issue19-single`, 최종 `issue19-multi`, 각 `ai/local-state/<ID>/plan.json`. 최종 structure·regression·product·qa·review 필수, Review/QA `independent: false`.
+- gate/resume 판정 요약: 수정 전 product failed(실제 종료 0). 2·3단계 각 gate/resume 0. 최종 검증 대상은 2단계 커밋 `319148e44` 위의 최종 작업 트리이며 커밋 후 HEAD 판정과 구분한다.
 
 ## 수정 전 재현 (구현 수정 전에 기록)
 
@@ -36,7 +36,7 @@
 - 생략 검증: 제품 화면 변경 없음으로 브라우저 제외. DB·E2E 변경 없음으로 추가 실행 제외.
 - 커밋 계획: 사용자 지정 총 3개 커밋. 이 단계는 이 기록 파일만 커밋하며 구현은 아직 변경하지 않았다. 푸시·PR·외부 게시 없음.
 
-## 2단계: Gradle 실행 판정 수정·재검증
+## Gradle 실행 판정 수정·재검증
 
 - 변경: test 항목의 `gradle_tasks` 전체 경로 배열을 검증하고, 출력 줄을 스트리밍하여 대상별 상태를 보관한다. 다른 작업 상태는 제외한다. 대상 누락·중복·미실행·스킵·실패·알 수 없는 상태를 거부한다. 대상 상태는 영수증과 gate/resume에서도 확인한다. 종료 코드·새 단일 XML·실제 건수를 함께 요구한다. 일반 build/static 판정과 CLI 인자는 유지한다.
 - 사용 안내: 대상 선언·plain 콘솔·거부 이유를 추가했다. 이 커밋에는 다중 보고서 집계를 포함하지 않았다.
@@ -46,3 +46,34 @@
 - QA/Review: begin 이후 XML·최소 결과·diff와 범위 대조, 현재 Codex 자체 수행으로 record. 독립 수행 아님. 대상 작업 캐시/스킵/상태 확인 불가 및 정상 단일 XML·기존 unittest/CLI 회귀 확인.
 - 준비/도구 실패: py_compile은 호스트 Python의 외부 캐시 쓰기 권한 때문에 미실행; unittest의 모듈 import/실행으로 문법 확인. 테스트 삽입용 stdin 스크립트 인코딩 실패 후 UTF-8을 명시하여 수정·54건 재검증 완료. 제품·하네스 테스트 실패 없음.
 - 커밋 경계: 2단계 gate는 `11fce8817`과 해당 미커밋 내용의 검증이다. 다음 커밋으로 HEAD가 바뀌면 이 gate를 새 HEAD의 통과로 주장하지 않는다. 3단계에서 새 실행으로 갱신한다.
+
+
+## 다중 JUnit 집계·재검증
+
+- 변경: `reports` 배열에 XML 파일·디렉터리·glob을 선언한다. 기존 단일 `report`·CLI 인자·unittest를 유지하며 Gradle 테스트에는 대상 `gradle_tasks` 선언이 필요하다. 선언 범위의 XML 전부를 읽어 정규화·중복 제거하고 testcase 기준으로 집계한다. 각 선택자가 보고서와 연결되어야 하며 범위 안 XML 일부를 누락하면 거부한다.
+- 신선도·근거: 명령 실행 전 범위의 기존 XML을 거부한다. 각 경로·SHA-256·전체 집계를 영수증에 연결하고 gate/resume/reuse에서 집합을 재조회하여 삭제·변경·추가를 무효화한다. 이전 실행 범위와 심볼릭 링크를 통해 결과를 섞지 않는다.
+- 자체 Review 발견·조치: 내부 정상 상태 값 EXECUTED와 같은 접미사를 출력한 경우도 확인 불가로 거부하도록 경계를 보완했다. plain Gradle의 실제 실행 줄에는 접미사가 없으며 관련 부정 회귀를 추가했다.
+- 명령·환경·대상: 같은 Java 25·Python 3.9.6·Gradle Wrapper 환경, 루트에서 `python3 -B ai/local-state/issue19-pre/verify.py multi issue19-multi`. 검증 대상은 `319148e44` HEAD 위의 최종 하네스·회귀·사용 안내 내용이다. 제품 테스트는 앞의 두 클래스와 같은 범위로 제한했다.
+
+| 완료 기준 | 변경·확인 내용 | 명령·절차 | 종료 코드·실제 건수 | 증거·결과 |
+|---|---|---|---|---|
+| 구조 검사 | 링크·필수 구조 | `python3 -B ai/tests/check.py` (하네스 run) | 0, 테스트 건수 적용 안 함 | passed |
+| 관련 회귀 | 정상 집계·중복·없음/0/스킵·일부 실패/오류/형식 오류·혼입·변경·기존 방식 | `python3 -B -m unittest discover -s ai/tests -p 'test_*.py'` (하네스 run) | 0, 실행 62·실패/오류/스킵 0 | passed; 중간 61건도 성공, 마지막 별도 범위 보존 회귀 추가 후 62건 재검증 |
+| 실제 Gradle 다중 연결 | TemplateResourceTest·ValidatorTest | `./gradlew test --tests alfio.util.TemplateResourceTest --console=plain --no-build-cache -I ai/local-state/issue19-pre/reports.gradle -Dissue19.reports=<저장소>/ai/local-state/issue19-multi-xml --tests alfio.util.ValidatorTest` (하네스 run) | 0, XML 2개·실행 68·실패/오류/스킵 0, :test EXECUTED | 원본 XML 별도 ElementTree 집계와 일치: 2건+66건 |
+| 실제 보고서 변경 무효화 | 자체 생성 XML 삭제·내용 공백 변경·새 XML 추가, 각각 원본 복구 | product inspect 및 CLI gate/resume | 변경마다 gate/resume 각 1, 복구 후 0 | 건수가 같아도 체크섬 변경 거부, 파일 집합 변화 거부 |
+| 자체 QA·Review | 실제 XML·diff·조건·범위·민감정보·호환성 대조 | begin → 확인 → record, 독립 수행 false | 0 | 최소 근거는 Git 제외 `ai/local-state/issue19-multi/qa.md`, `review.md` |
+| 최종 게이트·재개 | 필수 5항목 전체 유효 | `python3 -B ai/harness/run.py gate issue19-multi`, `resume issue19-multi` | 각각 0 | 최종 작업 트리에서 통과 |
+
+- 실패 구분: 제품 실패 없음. 하네스 구현의 최종 검증 실패 없음. 부정 사례의 거부는 기대 동작이다. 앞의 테스트 준비·인코딩·Python 캐시 권한 문제는 조치 또는 실제 실행 검증으로 해소했다.
+- 미실행·남은 제약: 제품 전체 테스트·브라우저·DB·E2E는 변경 범위 밖이므로 미실행. JUnit testsuite/testsuites 형식과 실행별 로컬 범위만 지원한다. 선언 밖 XML이나 명령·보고서의 악의적 위조까지 검증하는 보안 실행기는 아니다. 실제 Gradle FROM-CACHE·NO-SOURCE·SKIPPED 상태는 새 제품 실행에서 유도하지 않았으며 합성 상태 출력 회귀로 검증했다. 실제 제품 재현에서 다른 작업 UP-TO-DATE와 대상 실행은 확인했다.
+- 데이터·정리: 임시 Git unittest 자원은 테스트 정리 함수로 제거했다. 실제 생성 XML·최소 영수증은 로컬 검증 근거로 Git 제외 위치에 보존한다. 기존 제품 XML·실험 worktree·과거 기록·사용자 데이터·프로세스는 정리하지 않았다.
+- 변경 파일: `ai/harness/run.py`, `ai/tests/test_run.py`, `docs/harness/local-validation.md`, 이 작업 MD 총 4개. 제품 코드·Gradle 설정·기존 E2E·DB 환경·의존성 변경 없음.
+- 커밋: 1단계 `11fce8817` 재현 MD만, 2단계 `319148e44` 단일 판정·54건 회귀·실제 2건·gate 통과, 3단계는 다중 집계·62건 회귀·실제 68건·gate 통과를 저장한다. 각 단계 명시적 스테이징·staged diff·공백·민감정보 확인. 푸시·PR·외부 댓글·이슈 수정·노션 수정 없음.
+
+### 커밋과 검증 대상의 일치 근거
+
+최종 gate는 `319148e44` 위의 아래 파일 내용에 대한 통과다. 기록 MD는 snapshot에서 제외되므로 결과 요약 추가는 코드 검증을 변경하지 않는다. 최종 커밋 후에는 HEAD 변경만으로 이 실행 기록이 무효가 되는 것이 정상이며 이를 새 HEAD의 gate 통과로 표시하지 않는다. 커밋 파일 SHA-256과 아래 검증된 내용을 대조하여 구현·회귀·안내가 동일한지 확인한다. 재현 기록 MD는 1단계 커밋 이전에 저장되었다.
+
+- `ai/harness/run.py`: `c6b53b4bd01bfcd5a4b400d688637471b76b776a6312f15aab0171c8099edb6c`
+- `ai/tests/test_run.py`: `26081a312646bddd65f07687c7a401291e97213fe4faaee1572b8d1b62ba4e7f`
+- `docs/harness/local-validation.md`: `c11529019e2a5eb90ff5e7808834a628e7d5fc833b7459a0081e28e0dc10cf07`
