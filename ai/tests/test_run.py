@@ -3,7 +3,7 @@ from copy import deepcopy
 import importlib.util
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -537,6 +537,23 @@ class RunTests(unittest.TestCase):
         (self.root / 'ai/local-state/xml').mkdir()
         (self.root / 'ai/local-state/xml/alias.xml').symlink_to(self.root / 'ai/local-state/elsewhere/a.xml')
         with self.assertRaises(harness.Invalid): self.run.execute('test')
+
+    def test_junit_windows_rooted_and_drive_relative_scopes_are_invalid(self):
+        root = PureWindowsPath('C:/repo')
+        # 실제 Windows 파일시스템 대신 표준 라이브러리의 경로 해석을 검증한다.
+        with patch.object(harness, 'Path', PureWindowsPath):
+            for name in ('/tmp/xml', r'\tmp\xml', r'C:tmp\xml',
+                         r'C:\tmp\xml', r'D:\tmp\xml', r'\\server\share\xml'):
+                with self.subTest(name=name), self.assertRaises(harness.Invalid):
+                    harness.report_scope(root, name)
+
+    def test_junit_outside_report_paths_raise_harness_invalid(self):
+        paths = ((self.root, self.root.parent / 'outside.xml'),
+                 (PureWindowsPath('C:/repo'), PureWindowsPath('C:/tmp/xml')),
+                 (PureWindowsPath('C:/repo'), PureWindowsPath('D:/tmp/xml')))
+        for root, path in paths:
+            with self.subTest(root=root, path=path), self.assertRaises(harness.Invalid):
+                harness.report_path(root, path)
 
     def test_multiple_junit_separate_scopes_preserve_previous_execution(self):
         self.put('ai/local-state/previous/TEST-old.xml', '<testsuite><testcase><failure/></testcase></testsuite>')

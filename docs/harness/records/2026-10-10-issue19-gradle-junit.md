@@ -77,3 +77,18 @@
 - `ai/harness/run.py`: `c6b53b4bd01bfcd5a4b400d688637471b76b776a6312f15aab0171c8099edb6c`
 - `ai/tests/test_run.py`: `26081a312646bddd65f07687c7a401291e97213fe4faaee1572b8d1b62ba4e7f`
 - `docs/harness/local-validation.md`: `c11529019e2a5eb90ff5e7808834a628e7d5fc833b7459a0081e28e0dc10cf07`
+
+## Windows CI 경로 오류 보완
+
+- 후속 요청: PR #20의 Windows CI 실패를 수정하고 커밋까지만 수행한다. 푸시·PR 본문 변경·외부 댓글은 수행하지 않는다.
+- 출발 상태: `fix/19-harness-gradle-junit`, HEAD `7b003758b`, 작업 트리 깨끗함. 현재 Codex 순차 구현·자체 Review/QA, 독립 수행 아님.
+- 실패 근거: PR의 Windows Harness 실행에서 `test_multiple_junit_declaration_scope_and_symlink_guards` 오류 1건, 총 62건 실행 후 종료 1. Ubuntu Harness는 통과했다.
+- 수정 전 로컬 재현: Python 3.9.6/macOS에서 표준 라이브러리 PureWindowsPath로 Windows 경로 해석을 사용한 회귀를 추가하고 `python3 -B -m unittest discover -s ai/tests -p 'test_run.py' -k junit_windows_rooted` 실행. 종료 1, 테스트 1건의 부정 경로 하위 사례 3개 오류. `/tmp/xml`과 루트 상대 경로는 Windows에서 드라이브 없는 절대 경로로 is_absolute 검사에 걸리지 않고 외부 경로가 되어 relative_to에서 ValueError가 발생했다. 드라이브 상대 경로도 anchor가 있어 거부해야 함을 확인했다. PureWindowsPath의 드라이브 상대 사례는 실제 파일시스템 resolve 미지원으로 AttributeError가 발생하므로 Windows CI 오류와 구분한다.
+- 수정 계획: 보고서 범위 선택자의 anchor(드라이브 또는 루트)가 있으면 상대 경로가 아닌 것으로 거부한다. 보고서 경로가 저장소 하위가 아니면 relative_to의 ValueError를 하네스 Invalid로 변환한다. Windows 경로·외부 경로 회귀와 전체 하네스 검사를 수행한다. 실제 Windows 실행은 이 로컬 환경에서 수행할 수 없으며 푸시하지 않으므로 CI 재실행은 후속이다.
+
+- 수정 결과: `report_scope`는 anchor가 있는 경로를 명령 실행 전에 거부한다. `report_path`는 저장소 밖 경로 변환 오류를 Invalid로 처리한다. 루트 상대·드라이브 상대·절대·UNC 및 같은/다른 드라이브 외부 경로 회귀 2건을 추가했다. 테스트 기대값 완화나 CI 설정 변경 없음.
+- 재검증: 로컬 Python 3.9.6/macOS에서 추가 회귀 각각 1건 통과(종료 0). `issue19-windows-fix`에 구조 검사·전체 회귀 64건(실패/오류/스킵 0)·자체 QA/Review를 연결했고 gate/resume 각 0. 검증 대상은 `7b003758b` 위의 이 후속 변경이다. 명령은 `python3 -B ai/tests/check.py`와 `python3 -B -m unittest discover -s ai/tests -p 'test_*.py'`이며 각 종료 0.
+- 검증 한계: 표준 라이브러리로 Windows 경로 해석과 예외를 확인했으며 실제 Windows OS/Python 3.13 CI는 미실행이다. 이번 요청은 커밋까지만이므로 푸시·CI 재실행·PR 본문 수정·외부 댓글을 하지 않는다. 제품 코드 변경이 없어 Gradle·DB·E2E·브라우저는 반복 실행하지 않았다.
+- 커밋 범위: 하네스 구현·회귀·이 작업 MD 3개 파일. 제목 `fix: Windows JUnit 보고서 경로 오류 처리 보완`. 커밋 전 staged diff·공백·민감정보를 확인한다. 커밋 후 HEAD 변경과 로컬 검증 대상을 구분하며 아래 파일 체크섬으로 검증 내용과 커밋 내용의 일치를 확인한다.
+  - `ai/harness/run.py`: `9aea6c80654b039adc015e41c9c7c73d8e3ee4fb7807d2a9020041e2da784cf1`
+  - `ai/tests/test_run.py`: `9bc03b21528c31493f07efae769b3ada6bfad38ea1d40c9405bf42e6f525a2d1`

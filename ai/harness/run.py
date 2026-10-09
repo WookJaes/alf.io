@@ -191,7 +191,7 @@ def counts_junit(path):
 
 def report_scope(root, name):
     """선택자의 고정 디렉터리를 실행별 보고서 범위로 사용한다."""
-    if not nonempty(name) or Path(name).is_absolute():
+    if not nonempty(name) or Path(name).anchor:
         raise Invalid('JUnit reports 저장소 기준 상대 경로 필요')
     parts = Path(name).parts
     wildcard = next((i for i, part in enumerate(parts) if glob.has_magic(part)), None)
@@ -208,7 +208,11 @@ def report_scope(root, name):
 
 def report_path(root, path):
     # 경로 별칭과 외부/이전 실행 링크를 보고서 근거로 인정하지 않는다.
-    resolved = relative(root, str(path.relative_to(root)))
+    try:
+        name = str(path.relative_to(root))
+    except ValueError as exc:
+        raise Invalid('JUnit 보고서는 저장소 안의 상대 경로 필요') from exc
+    resolved = relative(root, name)
     if (root / LOCAL).resolve() not in resolved.parents:
         raise Invalid('JUnit 보고서는 ai/local-state/ 안에 생성')
     if any(p.is_symlink() for p in (path, *path.parents) if p != root and root in p.parents):
