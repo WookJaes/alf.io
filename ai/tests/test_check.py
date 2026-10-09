@@ -67,7 +67,8 @@ class HarnessChecks(unittest.TestCase):
         (self.root / 'ai/roles/review.md').unlink()
         self.assertTrue(any('필수 문서 누락' in e for e in validate(self.root)))
 
-    def test_runtime_files_are_required(self):
+    def test_common_responsibilities_and_runtime_are_required(self):
+        self.assertEqual(ROLES, ('diagnosis', 'review', 'verification', 'memory'))
         for name in ('ai/harness/run.py', 'ai/tests/test_run.py', 'docs/harness/local-validation.md'):
             with self.subTest(name=name):
                 path = self.root / name

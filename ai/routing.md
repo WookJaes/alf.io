@@ -19,11 +19,11 @@
 
 ## 책임 문서
 
-- [문서](roles/documentation.md): 명세와 안내.
-- [구현](roles/implementation.md): 코드와 회귀 테스트.
+- [문서](WORKFLOW.md#공통-작업-책임): 명세와 안내.
+- [구현](WORKFLOW.md#공통-작업-책임): 코드와 회귀 테스트.
 - [진단](roles/diagnosis.md): 원인과 이슈 초안.
 - [리뷰](roles/review.md): diff와 근거 대조.
-- [오케스트레이션](roles/orchestration.md): 범위·다음 행동·완료 판단.
+- [진행 관리](WORKFLOW.md#공통-작업-책임): 범위·다음 행동·완료 판단.
 - [실행 검증](roles/verification.md): 실제 테스트·화면·DB 확인.
 - [기억](roles/memory.md): 실패 이력과 검증된 지식.
 

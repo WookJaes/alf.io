@@ -95,7 +95,7 @@ Git 추적 파일 및 Git에서 무시하지 않는 미추적 파일의 내용·
 
 ## 기존 제품 커밋에 적용
 
-제품 코드·E2E·DB 환경을 가져오지 않고 하네스 파일만 옮긴다. 이번 변경 목록은 `.gitignore`, `ai/WORKFLOW.md`, `ai/routing.md`, `ai/harness/run.py`, `ai/tests/check.py`, `ai/tests/test_run.py`, `ai/tests/test_check.py`, `ai/roles/review.md`, `ai/roles/verification.md`, `ai/templates/work.md`, `docs/harness/README.md`, 이 안내다. 이번 작업 기록은 이식에 불필요하다.
+제품 코드·E2E·DB 환경을 가져오지 않고 하네스 파일만 옮긴다. 이번 변경 목록은 `.gitignore`, `ai/WORKFLOW.md`, `ai/routing.md`, `ai/harness/run.py`, `ai/tests/check.py`, `ai/tests/test_run.py`, `ai/tests/test_check.py`, `ai/roles/review.md`, `ai/roles/verification.md`, `ai/templates/work.md`, `docs/harness/README.md`, 이 안내다. `ai/roles/documentation.md`, `implementation.md`, `orchestration.md` 삭제도 포함한다. 이번 작업 기록은 이식에 불필요하다.
 
 현재 변경을 파일 목록으로 제한한 패치로 내보내고 **별도로 새로 만든 적용용 checkout**에서 `git apply --check` → `git apply` → 하네스 검사·회귀 테스트를 수행한다. 기존 실험 worktree는 수정하지 않는다. 이전 제품 커밋에 기존 하네스가 없다면 현행 AGENTS·ai·docs/harness 안내·docs/conventions/git.md·하네스 CI의 필요한 파일도 하네스만 복사해 탐색 경로를 확보한다. `.gitignore`는 기존 규칙을 보존하고 로컬 상태 제외 규칙만 병합한다. 현행 제품 디렉터리·제품 설정·검증 환경은 복사하지 않는다.
 

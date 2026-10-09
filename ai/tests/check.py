@@ -5,8 +5,7 @@ import re
 import sys
 from urllib.parse import unquote, urlsplit
 
-ROLES = ('documentation', 'implementation', 'diagnosis', 'review',
-         'orchestration', 'verification', 'memory')
+ROLES = ('diagnosis', 'review', 'verification', 'memory')
 REQUIRED = ('AGENTS.md', 'ai/WORKFLOW.md', 'ai/routing.md',
             'ai/templates/work.md', 'ai/templates/failure.md',
             'ai/templates/memory.md', 'ai/memory/index.md',

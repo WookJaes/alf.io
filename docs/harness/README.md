@@ -7,7 +7,7 @@
 | 위치 | 내용 |
 |---|---|
 | ai/WORKFLOW.md, routing.md | 현재 Codex의 작업 절차와 역할 선택 |
-| ai/roles/ | 역할 7개의 책임; 요청 시 필요한 문서만 조회 |
+| ai/roles/ | Review·QA·진단·기억 역할; 문서·구현·진행 관리는 WORKFLOW 공통 책임 |
 | ai/harness/ | [로컬 결과·게이트·무효화·재개 명령](local-validation.md) |
 | ai/local-state/ | Git 제외 선언·최소 실행 상태·근거; CI 전송 없음 |
 | ai/templates/ | 통합 작업 기록, 실패·기억·PR 리뷰 글·대댓글 양식 |
