@@ -3,7 +3,7 @@ from copy import deepcopy
 import importlib.util
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -351,6 +351,274 @@ class RunTests(unittest.TestCase):
             check['command'] = [sys.executable, '-c', f'from pathlib import Path; Path({check["report"]!r}).write_text({xml!r})']
             self.save_plan()
             self.assertFalse(self.run.execute('test'))
+
+    def test_unittest_other_gradle_tasks_do_not_reject_real_tests(self):
+        for marker in ('> Task :compileJava UP-TO-DATE', '> Task :compileJava FROM-CACHE',
+                       '> Task :processTestResources NO-SOURCE'):
+            with self.subTest(marker=marker):
+                self.plan['checks'][0]['command'] = [sys.executable, '-c',
+                    'import unittest\nprint(' + repr(marker) + ', flush=True)\nclass T(unittest.TestCase):\n def test_real(self): pass\nunittest.main()']
+                self.save_plan()
+                self.assertTrue(self.run.execute('test'))
+                self.assertEqual(self.run.inspect()[0]['reasons'], [])
+
+    def test_gradle_single_junit_target_states_and_exit_code(self):
+        check = self.plan['checks'][0]
+        states = ('', 'UP-TO-DATE', 'FROM-CACHE', 'NO-SOURCE', 'SKIPPED', 'FAILED', 'unknown', 'EXECUTED', None)
+        for index, target in enumerate(states):
+            with self.subTest(target=target):
+                report = f'ai/local-state/gradle-{index}.xml'
+                lines = '> Task :compileJava UP-TO-DATE\n> Task :processTestResources NO-SOURCE\n> Task :other FROM-CACHE\n'
+                if target is not None:
+                    lines += '> Task :module:test' + (' ' + target if target else '')
+                check.update(adapter='junit', report=report, gradle_tasks=[':module:test'],
+                             command=[sys.executable, '-c',
+                                      f'from pathlib import Path; print({lines!r}); Path({report!r}).write_text("<testsuite><testcase/></testsuite>")'])
+                self.save_plan()
+                self.assertEqual(self.run.execute('test'), target == '')
+                result = self.run.load()[1]['results']['test']
+                self.assertEqual(result['exit_code'], 0)
+                self.assertEqual(result['counts']['executed'], 1)
+                if target != '': self.assertIn('대상', result['summary'])
+        check['report'] = 'ai/local-state/gradle-exit.xml'
+        check['command'] = [sys.executable, '-c',
+            'from pathlib import Path; print("> Task :module:test"); Path("ai/local-state/gradle-exit.xml").write_text("<testsuite><testcase/></testsuite>"); raise SystemExit(7)']
+        self.save_plan()
+        self.assertFalse(self.run.execute('test'))
+        self.assertEqual(self.run.load()[1]['results']['test']['exit_code'], 7)
+
+    def test_gradle_missing_declaration_and_task_evidence(self):
+        check = self.plan['checks'][0]
+        check.update(adapter='junit', report='ai/local-state/unknown.xml', command=['./gradlew', 'test'])
+        with self.assertRaises(harness.Invalid): harness.validate_plan(self.plan)
+        check['command'] = [sys.executable, '-c',
+            'from pathlib import Path; print("> Task :test"); Path("ai/local-state/unknown.xml").write_text("<testsuite><testcase/></testsuite>")']
+        self.save_plan()
+        self.assertFalse(self.run.execute('test'))
+        self.assertIn('gradle_tasks', self.run.load()[1]['results']['test']['summary'])
+        check['gradle_tasks'] = [':test']
+        check['report'] = 'ai/local-state/evidence.xml'
+        check['command'][2] = check['command'][2].replace('unknown.xml', 'evidence.xml')
+        self.save_plan()
+        self.assertTrue(self.run.execute('test'))
+        _, state = self.run.load()
+        result = state['results']['test']
+        result.pop('gradle_tasks')
+        self.run.attest(state, check, {k: v for k, v in result.items() if k not in {'receipt', 'receipt_hash'}})
+        self.assertTrue(self.run.inspect()[0]['reasons'])
+
+    def test_gradle_stream_split_tail_limit_and_all_targets(self):
+        item = dict(self.plan['checks'][0], gradle_tasks=[':test', ':module:test'])
+        output = harness.ExecutionOutput(item)
+        for chunk in (b'> Task :compileJava UP-', b'TO-DATE\n> Task :te', b'st\n',
+                      b'x' * 70000 + b'\n', b'> Task :module:test'):
+            output.feed(chunk)
+        self.assertIsNone(output.finish())
+        self.assertEqual(output.tasks, {':test': 'EXECUTED', ':module:test': 'EXECUTED'})
+        for lines in (b'> Task :test\n', b'> Task :test\n> Task :module:test SKIPPED\n',
+                      b'> Task :test\n> Task :test UP-TO-DATE\n> Task :module:test\n'):
+            output = harness.ExecutionOutput(item); output.feed(lines)
+            self.assertIsNotNone(output.finish())
+
+    def test_gradle_task_declaration_validation(self):
+        for tasks in ([], ':test', [':test', ':test'], ['test'], [None]):
+            self.plan['checks'][0]['gradle_tasks'] = tasks
+            with self.assertRaises(harness.Invalid): harness.validate_plan(self.plan)
+
+    def multiple_junit(self, files, selectors=None):
+        for item in self.plan['checks']:
+            item['required'] = item['id'] == 'test'
+        check = self.plan['checks'][0]
+        check.pop('report', None)
+        check.pop('gradle_tasks', None)
+        code = 'from pathlib import Path\n'
+        for name, xml in files.items():
+            code += f'p=Path({name!r}); p.parent.mkdir(parents=True, exist_ok=True); p.write_text({xml!r})\n'
+        check.update(adapter='junit', reports=selectors or ['ai/local-state/xml/TEST-*.xml'],
+                     command=[sys.executable, '-c', code])
+        self.save_plan()
+        return check
+
+    def test_multiple_junit_aggregate_and_deduplicate_paths(self):
+        self.multiple_junit({
+            'ai/local-state/xml/TEST-a.xml': '<testsuite tests="999"><testcase/><testcase><skipped/></testcase></testsuite>',
+            'ai/local-state/xml/TEST-b.xml': '<testsuites><testsuite><testcase/><testcase/></testsuite></testsuites>'},
+            ['ai/local-state/xml/TEST-*.xml', 'ai/local-state/xml/TEST-a.xml', 'ai/local-state/xml'])
+        self.assertTrue(self.run.execute('test'))
+        result = self.run.load()[1]['results']['test']
+        self.assertEqual(result['counts'], {'executed': 3, 'failures': 0, 'errors': 0, 'skipped': 1})
+        self.assertEqual(len(result['reports']), 2)
+        for entry in result['reports']:
+            self.assertEqual(entry['hash'], harness.file_hash(self.root / entry['path']))
+        self.assertEqual(harness.main(['--root', str(self.root), 'gate', 'run-1']), 0)
+        self.assertEqual(harness.main(['--root', str(self.root), 'resume', 'run-1']), 0)
+
+    def test_multiple_junit_missing_zero_skipped_failures_errors_and_format(self):
+        bad_cases = (None, '<testsuite/>', '<testsuite><testcase><skipped/></testcase></testsuite>',
+                     '<testsuite><testcase><failure/></testcase></testsuite>',
+                     '<testsuite><testcase><error/></testcase></testsuite>', 'broken',
+                     '<other><testcase/></other>')
+        for index, xml in enumerate(bad_cases):
+            with self.subTest(xml=xml):
+                directory = f'ai/local-state/bad-{index}'
+                files = {} if xml is None else {directory + '/a.xml': xml}
+                if index >= 3:
+                    files[directory + '/b.xml'] = '<testsuite><testcase/></testsuite>'
+                self.multiple_junit(files, [directory])
+                self.assertFalse(self.run.execute('test'))
+                self.assertEqual(self.run.load()[1]['results']['test']['exit_code'], 0)
+                self.assertEqual(harness.main(['--root', str(self.root), 'gate', 'run-1']), 1)
+
+    def test_multiple_junit_reads_every_report_and_missing_selector(self):
+        files = {'ai/local-state/xml/TEST-a.xml': '<testsuite><testcase/></testsuite>',
+                 'ai/local-state/xml/TEST-b.xml': '<testsuite><testcase><failure/></testcase></testsuite>'}
+        check = self.multiple_junit(files)
+        self.assertFalse(self.run.execute('test'))
+        result = self.run.load()[1]['results']['test']
+        self.assertEqual(result['counts']['executed'], 2)
+        self.assertEqual(result['counts']['failures'], 1)
+        self.assertEqual(len(result['reports']), 2)
+        check['reports'] = ['ai/local-state/xml/TEST-a.xml']
+        with self.assertRaises(harness.Invalid): harness.reports_junit(self.root, check)
+        check['reports'] = ['ai/local-state/xml/TEST-*.xml', 'ai/local-state/missing.xml']
+        with self.assertRaises(harness.Invalid): harness.reports_junit(self.root, check)
+
+    def test_multiple_junit_old_files_block_before_command_and_rerun(self):
+        self.put('ai/local-state/xml/old.xml', '<testsuite><testcase/></testsuite>')
+        self.multiple_junit({'ai/local-state/xml/TEST-new.xml': '<testsuite><testcase/></testsuite>'})
+        with self.assertRaises(harness.Invalid): self.run.execute('test')
+        self.assertFalse((self.root / 'ai/local-state/xml/TEST-new.xml').exists())
+        (self.root / 'ai/local-state/xml/old.xml').unlink()
+        self.assertTrue(self.run.execute('test'))
+        with self.assertRaises(harness.Invalid): self.run.execute('test')
+
+    def test_multiple_junit_report_set_changes_invalidate_gate_resume_and_reuse(self):
+        name = 'ai/local-state/xml/TEST-a.xml'
+        xml = '<testsuite><testcase/></testsuite>'
+        self.multiple_junit({name: xml})
+        self.assertTrue(self.run.execute('test'))
+        other = harness.Run(self.root, 'multi-reuse'); other.init(self.plan)
+        other.reuse('run-1', 'test', 'same report set')
+        self.assertEqual(other.inspect()[0]['reasons'], [])
+        for mutation in ('delete', 'content', 'add', 'unselected-add'):
+            with self.subTest(mutation=mutation):
+                if mutation == 'delete': (self.root / name).unlink()
+                elif mutation == 'content': self.put(name, xml + '\n')
+                elif mutation == 'add': self.put('ai/local-state/xml/TEST-added.xml', xml)
+                else: self.put('ai/local-state/xml/unselected.xml', xml)
+                self.assertEqual(self.run.inspect()[0]['status'], 'invalid')
+                self.assertEqual(other.inspect()[0]['status'], 'invalid')
+                self.assertEqual(harness.main(['--root', str(self.root), 'gate', 'run-1']), 1)
+                self.assertEqual(harness.main(['--root', str(self.root), 'resume', 'run-1']), 1)
+                with self.assertRaises(harness.Invalid): other.reuse('run-1', 'test', 'changed reports')
+                self.put(name, xml)
+                for added in ('TEST-added.xml', 'unselected.xml'):
+                    (self.root / 'ai/local-state/xml' / added).unlink(missing_ok=True)
+                self.assertEqual(self.run.inspect()[0]['reasons'], [])
+
+    def test_invalid_junit_patterns_reject_before_command_and_state_transition(self):
+        for pattern in ('**.xml', 'foo**/*.xml', '***/*.xml'):
+            with self.subTest(pattern=pattern):
+                check = self.multiple_junit(
+                    {'ai/local-state/xml/TEST-a.xml': '<testsuite><testcase/></testsuite>'},
+                    ['ai/local-state/xml/' + pattern])
+                with self.assertRaises(harness.Invalid): harness.validate_plan(self.plan)
+                other = harness.Run(self.root, 'invalid-pattern')
+                with self.assertRaises(harness.Invalid): other.init(self.plan)
+                self.assertFalse(other.directory.exists())
+                self.assertEqual(harness.main(['--root', str(self.root), 'run', 'run-1', 'test']), 2)
+                self.assertFalse((self.root / 'ai/local-state/xml/TEST-a.xml').exists())
+                self.assertEqual(harness.read(self.run.directory / 'state.json')['results']['test']['status'], 'not_run')
+                with self.assertRaises(harness.Invalid): harness.report_scope(self.root, check['reports'][0])
+
+    def test_recursive_junit_pattern_reads_nested_reports(self):
+        self.multiple_junit({
+            'ai/local-state/xml/TEST-a.xml': '<testsuite><testcase/></testsuite>',
+            'ai/local-state/xml/nested/TEST-b.xml': '<testsuite><testcase/><testcase/></testsuite>'},
+            ['ai/local-state/xml/**/*.xml'])
+        self.assertTrue(self.run.execute('test'))
+        result = self.run.load()[1]['results']['test']
+        self.assertEqual(result['counts']['executed'], 3)
+        self.assertEqual(len(result['reports']), 2)
+        self.assertEqual(self.run.inspect()[0]['reasons'], [])
+
+    def test_junit_glob_value_error_becomes_harness_invalid(self):
+        with patch.object(Path, 'glob', side_effect=ValueError('invalid pattern')):
+            with self.assertRaisesRegex(harness.Invalid, '패턴 문법 오류'):
+                harness.report_glob(self.root, 'ai/local-state/xml/*.xml')
+
+    def test_multiple_junit_declaration_scope_guards(self):
+        check = self.multiple_junit({})
+        for selectors in ([], 'xml', [None], ['']):
+            check['reports'] = selectors
+            with self.assertRaises(harness.Invalid): harness.validate_plan(self.plan)
+        check['reports'] = ['ai/local-state/xml']
+        check['report'] = 'ai/local-state/a.xml'
+        with self.assertRaises(harness.Invalid): harness.validate_plan(self.plan)
+        check.pop('report')
+        for selectors in (['/tmp/xml'], ['../xml'], ['build/test-results/*.xml'], ['ai/local-state']):
+            check['reports'] = selectors; self.save_plan()
+            with self.assertRaises(harness.Invalid): self.run.execute('test')
+
+    def make_symlink(self, path, target, directory=False):
+        try:
+            path.symlink_to(target, target_is_directory=directory)
+        except OSError as exc:
+            if getattr(exc, 'winerror', None) == 1314:
+                self.skipTest('심볼릭 링크 생성 권한 없음: Windows WinError 1314')
+            raise
+
+    def test_multiple_junit_directory_symlinks_are_rejected(self):
+        self.multiple_junit({}, ['ai/local-state/xml'])
+        self.put('ai/local-state/elsewhere/a.xml', '<testsuite><testcase/></testsuite>')
+        self.make_symlink(self.root / 'ai/local-state/xml', self.root / 'ai/local-state/elsewhere', directory=True)
+        with self.assertRaises(harness.Invalid): self.run.execute('test')
+
+    def test_multiple_junit_file_symlinks_are_rejected(self):
+        self.multiple_junit({}, ['ai/local-state/xml'])
+        self.put('ai/local-state/elsewhere/a.xml', '<testsuite><testcase/></testsuite>')
+        (self.root / 'ai/local-state/xml').mkdir()
+        self.make_symlink(self.root / 'ai/local-state/xml/alias.xml', self.root / 'ai/local-state/elsewhere/a.xml')
+        with self.assertRaises(harness.Invalid): self.run.execute('test')
+
+    def test_symlink_setup_unexpected_errors_are_not_skipped(self):
+        with patch.object(Path, 'symlink_to', side_effect=PermissionError('unexpected permission error')):
+            with self.assertRaises(PermissionError):
+                self.make_symlink(self.root / 'ai/local-state/link', self.root / 'ai/local-state/target')
+
+    def test_junit_windows_rooted_and_drive_relative_scopes_are_invalid(self):
+        root = PureWindowsPath('C:/repo')
+        # 실제 Windows 파일시스템 대신 표준 라이브러리의 경로 해석을 검증한다.
+        with patch.object(harness, 'Path', PureWindowsPath):
+            for name in ('/tmp/xml', r'\tmp\xml', r'C:tmp\xml',
+                         r'C:\tmp\xml', r'D:\tmp\xml', r'\\server\share\xml'):
+                with self.subTest(name=name), self.assertRaises(harness.Invalid):
+                    harness.report_scope(root, name)
+
+    def test_junit_outside_report_paths_raise_harness_invalid(self):
+        paths = ((self.root, self.root.parent / 'outside.xml'),
+                 (PureWindowsPath('C:/repo'), PureWindowsPath('C:/tmp/xml')),
+                 (PureWindowsPath('C:/repo'), PureWindowsPath('D:/tmp/xml')))
+        for root, path in paths:
+            with self.subTest(root=root, path=path), self.assertRaises(harness.Invalid):
+                harness.report_path(root, path)
+
+    def test_multiple_junit_separate_scopes_preserve_previous_execution(self):
+        self.put('ai/local-state/previous/TEST-old.xml', '<testsuite><testcase><failure/></testcase></testsuite>')
+        self.multiple_junit({
+            'ai/local-state/new-a/TEST-a.xml': '<testsuite><testcase/></testsuite>',
+            'ai/local-state/new-b/TEST-b.xml': '<testsuite><testcase/><testcase/></testsuite>'},
+            ['ai/local-state/new-a/TEST-a.xml', 'ai/local-state/new-b/TEST-b.xml'])
+        self.assertTrue(self.run.execute('test'))
+        self.assertEqual(self.run.load()[1]['results']['test']['counts']['executed'], 3)
+        self.assertTrue((self.root / 'ai/local-state/previous/TEST-old.xml').is_file())
+        self.assertEqual(self.run.inspect()[0]['reasons'], [])
+
+    def test_multiple_junit_cli_existing_arguments_unchanged(self):
+        self.multiple_junit({'ai/local-state/xml/TEST-a.xml': '<testsuite><testcase/></testsuite>',
+                             'ai/local-state/xml/TEST-b.xml': '<testsuite><testcase/></testsuite>'})
+        self.assertEqual(harness.main(['--root', str(self.root), 'run', 'run-1', 'test']), 0)
+        self.assertEqual(harness.main(['--root', str(self.root), 'gate', 'run-1']), 0)
 
     def test_automatic_change_during_command_invalidates(self):
         self.plan['checks'][1]['command'] = [sys.executable, '-c', 'from pathlib import Path; Path("product.txt").write_text("changed during run")']

@@ -1,6 +1,7 @@
 """표준 라이브러리 기반 로컬 검증 기록·게이트. 에이전트 실행기가 아니다."""
 import argparse
 from datetime import datetime, timezone
+import glob
 import hashlib
 import json
 import os
@@ -94,8 +95,24 @@ def validate_plan(plan):
             if item['kind'] == 'test':
                 if item.get('adapter') not in {'unittest', 'junit'}:
                     raise Invalid('test adapter는 unittest 또는 junit')
-                if item['adapter'] == 'junit' and not nonempty(item.get('report')):
-                    raise Invalid('JUnit 보고서 상대 경로 필요')
+                if item['adapter'] == 'junit':
+                    if 'reports' in item:
+                        reports = item['reports']
+                        if ('report' in item or not isinstance(reports, list) or not reports
+                                or not all(nonempty(r) for r in reports)):
+                            raise Invalid('JUnit reports 상대 경로 배열 필요, report와 동시 사용 금지')
+                        for name in reports:
+                            validate_report_selector(name)
+                    elif not nonempty(item.get('report')):
+                        raise Invalid('JUnit 보고서 상대 경로 필요')
+                if 'gradle_tasks' in item:
+                    tasks = item['gradle_tasks']
+                    if (not isinstance(tasks, list) or not tasks
+                            or not all(isinstance(t, str) and re.fullmatch(r'(?::[\w.-]+)+', t) for t in tasks)
+                            or len(set(tasks)) != len(tasks)):
+                        raise Invalid('gradle_tasks는 중복 없는 전체 작업 경로 배열 필요 (:test 등)')
+                if is_gradle(command) and not item.get('gradle_tasks'):
+                    raise Invalid('Gradle 테스트는 gradle_tasks에 검증 대상 작업 선언 필요')
     if not any(c['required'] for c in plan['checks']):
         raise Invalid('필수 검증 항목이 최소 한 개 필요')
     return plan
@@ -161,7 +178,10 @@ def result_unittest(output):
 def counts_junit(path):
     try:
         tree = ET.parse(path)
-        cases = list(tree.getroot().iter('testcase'))
+        root = tree.getroot()
+        if root.tag not in {'testsuite', 'testsuites'}:
+            raise Invalid('JUnit testsuite/testsuites 형식 필요')
+        cases = list(root.iter('testcase'))
         # 집계 속성 대신 실제 testcase를 센다. 비정상 XML은 실패한다.
         return {'executed': sum(c.find('skipped') is None for c in cases),
                 'failures': sum(c.find('failure') is not None for c in cases),
@@ -169,6 +189,147 @@ def counts_junit(path):
                 'skipped': sum(c.find('skipped') is not None for c in cases)}
     except (OSError, ET.ParseError) as exc:
         raise Invalid('JUnit 보고서 누락·형식 오류') from exc
+
+
+def validate_report_selector(name):
+    if not nonempty(name) or Path(name).anchor:
+        raise Invalid('JUnit reports 저장소 기준 상대 경로 필요')
+    if '\x00' in name or any('**' in part and part != '**' for part in Path(name).parts):
+        raise Invalid('JUnit reports 패턴 문법 오류: **는 경로 요소 전체로 사용 (**/*.xml)')
+
+
+def report_glob(root, name):
+    try:
+        return list(root.glob(name))
+    except ValueError as exc:
+        raise Invalid('JUnit reports 패턴 문법 오류: 패턴을 수정한 뒤 재실행') from exc
+
+
+def report_scope(root, name):
+    """선택자의 고정 디렉터리를 실행별 보고서 범위로 사용한다."""
+    validate_report_selector(name)
+    parts = Path(name).parts
+    wildcard = next((i for i, part in enumerate(parts) if glob.has_magic(part)), None)
+    if wildcard is not None:
+        scope = root / Path(*parts[:wildcard])
+    else:
+        path = root / name
+        scope = path.parent if name.endswith('.xml') else path
+    scope = report_path(root, scope)
+    if (root / LOCAL).resolve() not in scope.parents:
+        raise Invalid('JUnit 보고서 범위는 ai/local-state/ 하위 실행별 디렉터리 필요')
+    return scope
+
+
+def report_path(root, path):
+    # 경로 별칭과 외부/이전 실행 링크를 보고서 근거로 인정하지 않는다.
+    try:
+        name = str(path.relative_to(root))
+    except ValueError as exc:
+        raise Invalid('JUnit 보고서는 저장소 안의 상대 경로 필요') from exc
+    resolved = relative(root, name)
+    if (root / LOCAL).resolve() not in resolved.parents:
+        raise Invalid('JUnit 보고서는 ai/local-state/ 안에 생성')
+    if any(p.is_symlink() for p in (path, *path.parents) if p != root and root in p.parents):
+        raise Invalid('JUnit 보고서 범위·파일의 심볼릭 링크 금지')
+    return resolved
+
+
+def scope_xml(root, scope):
+    paths = list(scope.rglob('*'))
+    if any(p.is_symlink() for p in paths):
+        raise Invalid('JUnit 보고서 범위·파일의 심볼릭 링크 금지')
+    return {report_path(root, p) for p in paths if p.suffix == '.xml'}
+
+
+def report_inventory(root, item):
+    selected, inventory = set(), set()
+    for name in item['reports']:
+        scope = report_scope(root, name)
+        inventory.update(scope_xml(root, scope))
+        if glob.has_magic(name):
+            paths = report_glob(root, name)
+        elif name.endswith('.xml'):
+            paths = [root / name] if (root / name).exists() else []
+        else:
+            paths = list(scope.rglob('*.xml'))
+        files = {report_path(root, p) for p in paths}
+        if not files or any(not p.is_file() or p.suffix != '.xml' for p in files):
+            raise Invalid('JUnit 보고서 없음·파일 범위 오류: 각 reports 선택자에 XML 필요')
+        selected.update(files)
+    if selected != inventory:
+        raise Invalid('JUnit 범위 내 XML 누락: 정상 파일만 선택하지 말고 전체 디렉터리 또는 *.xml 선언')
+    return sorted(selected)
+
+
+def reports_junit(root, item):
+    counts = dict.fromkeys(('executed', 'failures', 'errors', 'skipped'), 0)
+    evidence = []
+    for path in report_inventory(root, item):
+        checksum = file_hash(path)
+        actual = counts_junit(path)
+        if checksum != file_hash(path):
+            raise Invalid('JUnit 보고서 읽기 중 변경: 재실행')
+        for key in counts:
+            counts[key] += actual[key]
+        evidence.append({'path': path.relative_to(root).as_posix(), 'hash': checksum})
+    return counts, evidence
+
+
+def is_gradle(command):
+    return Path(command[0]).name.lower() in {'gradle', 'gradlew', 'gradle.bat', 'gradlew.bat'}
+
+
+class ExecutionOutput:
+    """출력 전체를 보관하지 않고 줄별 작업 상태와 제한된 최종 요약을 수집한다."""
+    def __init__(self, item):
+        self.item = item
+        self.tail = b''
+        self.pending = b''
+        self.cached = False
+        self.tasks = {}
+        self.saw_gradle = False
+
+    def feed(self, chunk):
+        self.tail = (self.tail + chunk)[-65536:]
+        self.pending += chunk
+        while b'\n' in self.pending:
+            line, self.pending = self.pending.split(b'\n', 1)
+            self.line(line)
+        # 비정상적으로 긴 줄도 전체 로그로 보관하지 않는다. 작업 줄로 해석하지 않는다.
+        if len(self.pending) > 65536:
+            self.line(self.pending)
+            self.pending = b''
+
+    def line(self, raw):
+        line = raw.decode('utf-8', errors='replace').strip()
+        match = re.fullmatch(r'> Task ((?::[\w.-]+)+)(?:\s+(.+))?', line)
+        if match:
+            self.saw_gradle = True
+            task = match.group(1)
+            state = match.group(2) or 'EXECUTED'
+            if match.group(2) == 'EXECUTED':
+                state = 'UNKNOWN'  # plain Gradle 실행 줄에는 접미사가 없다.
+            if task in self.item.get('gradle_tasks', []):
+                self.tasks[task] = 'AMBIGUOUS' if task in self.tasks else state
+            if self.item['kind'] == 'test':
+                return  # 다른 Gradle 작업 상태는 테스트 전체의 캐시 판정이 아니다.
+        if re.search(r'UP-TO-DATE|FROM-CACHE|NO-SOURCE', line):
+            self.cached = True
+
+    def finish(self):
+        if self.pending:
+            self.line(self.pending)
+            self.pending = b''
+        tasks = self.item.get('gradle_tasks')
+        if tasks:
+            if any(self.tasks.get(t) != 'EXECUTED' for t in tasks):
+                return '대상 Gradle 작업 캐시·미실행·스킵 또는 실행 상태 확인 불가: --console=plain으로 재검증'
+        elif self.item.get('adapter') == 'junit' and (self.saw_gradle or is_gradle(self.item['command'])):
+            return 'Gradle 테스트 대상 확인 불가: gradle_tasks 선언 필요'
+        if self.cached:
+            return '캐시·미실행 표시 감지: 실제 실행 옵션으로 재검증'
+        return None
 
 
 def valid_counts(counts):
@@ -236,7 +397,14 @@ class Run:
             raise Invalid('수동 항목은 record 명령으로 범위·보고 주체·근거 기록')
         before = snapshot(self.root, plan)
         report = None
-        if item.get('adapter') == 'junit':
+        reports = None
+        if item.get('adapter') == 'junit' and 'reports' in item:
+            for name in item['reports']:
+                scope = report_scope(self.root, name)
+                if scope_xml(self.root, scope):
+                    raise Invalid('기존 JUnit 보고서 혼입 금지: 새 실행별 reports 범위 필요')
+                scope.mkdir(parents=True, exist_ok=True)
+        elif item.get('adapter') == 'junit':
             report = relative(self.root, item['report'])
             if (self.root / LOCAL).resolve() not in report.parents:
                 raise Invalid('JUnit 보고서는 ai/local-state/ 안에 생성')
@@ -247,40 +415,43 @@ class Run:
                   'mode': 'executed', 'snapshot': before, 'started': now(), 'command': item['command']}
         state['results'][item_id] = result
         self.save(state)
-        counts, error, cached = None, None, False
+        counts, error = None, None
+        output = ExecutionOutput(item)
         test_outcome, unexpected_successes = None, 0
         # 원본 로그는 디스크에 기록하지 않는다. unittest 요약만 메모리에서 추출한다.
         try:
             process = subprocess.Popen(item['command'], cwd=self.root, stdout=subprocess.PIPE,
                                        stderr=subprocess.STDOUT)
-            tail = b''
             while True:
                 chunk = process.stdout.read(4096)
                 if not chunk:
                     break
-                tail = (tail + chunk)[-65536:]
-                if re.search(rb'UP-TO-DATE|FROM-CACHE|NO-SOURCE', tail):
-                    cached = True
+                output.feed(chunk)
             exit_code = process.wait()
             process.stdout.close()
             if item['kind'] == 'test':
-                if report:
+                if item.get('adapter') == 'junit' and 'reports' in item:
+                    counts, reports = reports_junit(self.root, item)
+                elif report:
                     counts = counts_junit(report)
                 else:
-                    counts, test_outcome, unexpected_successes = result_unittest(tail.decode('utf-8', errors='replace'))
+                    counts, test_outcome, unexpected_successes = result_unittest(output.tail.decode('utf-8', errors='replace'))
         except OSError:
             exit_code = -1
             error = '명령 실행 불가: 실행 파일·권한 확인'
         except Invalid as exc:
             error = str(exc)  # 요약 오류여도 실제 프로세스 종료 코드는 보존한다.
+        execution_error = output.finish()
+        if item.get('gradle_tasks'):
+            result['gradle_tasks'] = output.tasks
         result.update(ended=now(), exit_code=exit_code, counts=counts,
                       summary=error or ('명령 성공' if exit_code == 0 else '명령 실패'))
         if item.get('adapter') == 'unittest':
             result.update(test_outcome=test_outcome, unexpected_successes=unexpected_successes)
         summary_passed = test_outcome != 'FAILED' and unexpected_successes == 0
-        passed = exit_code == 0 and not cached and summary_passed and (item['kind'] != 'test' or valid_counts(counts))
-        if cached:
-            result['summary'] = '캐시·미실행 표시 감지: 실제 실행 옵션으로 재검증'
+        passed = exit_code == 0 and not error and not execution_error and summary_passed and (item['kind'] != 'test' or valid_counts(counts))
+        if execution_error:
+            result['summary'] = execution_error
         elif not summary_passed:
             result['summary'] = 'unittest 최종 요약 FAILED: 실패 또는 예상 밖 성공을 확인하고 재검증'
         elif item['kind'] == 'test' and not valid_counts(counts) and not error:
@@ -288,6 +459,8 @@ class Run:
         result['status'] = 'passed' if passed else 'failed'
         if before != snapshot(self.root, plan):
             result.update(status='invalid', summary='실행 중 코드·조건 변경: 재실행 필요')
+        if reports is not None:
+            result['reports'] = reports
         if report and report.is_file():
             result['report'] = {'path': item['report'], 'hash': file_hash(report)}
         self.attest(state, item, result)
@@ -360,6 +533,8 @@ class Run:
         elif (result.get('mode') not in {'executed', 'reused'} or result.get('exit_code') != 0
               or type(result.get('exit_code')) is not int or result.get('command') != item['command']):
             issues.append('실제 명령 성공 근거 부족: 재실행')
+        if item.get('gradle_tasks') and result.get('gradle_tasks') != {t: 'EXECUTED' for t in item['gradle_tasks']}:
+            issues.append('대상 Gradle 작업 실행 근거 부족: 재실행')
         if item['kind'] == 'test' and not valid_counts(result.get('counts')):
             issues.append('테스트 0건·실패·오류·건수 누락: 실제 테스트 실행')
         if item.get('adapter') == 'unittest' and (result.get('test_outcome') != 'OK'
@@ -380,8 +555,16 @@ class Run:
                         issues.append('JUnit 건수 불일치: 재실행')
                 except (KeyError, TypeError, OSError, Invalid):
                     issues.append(key + ' 근거 확인 불가: 재확인')
-        if item.get('adapter') == 'junit' and 'report' not in result:
-            issues.append('JUnit 보고서 근거 누락: 재실행')
+        if item.get('adapter') == 'junit':
+            if 'reports' in item:
+                try:
+                    actual, evidence = reports_junit(self.root, item)
+                    if evidence != result.get('reports') or actual != result.get('counts'):
+                        issues.append('JUnit 보고서 집합·체크섬·집계 변경: 재실행')
+                except (Invalid, OSError, ValueError):
+                    issues.append('JUnit 보고서 집합 누락·변경·형식 오류: 재실행')
+            elif 'report' not in result:
+                issues.append('JUnit 보고서 근거 누락: 재실행')
         return issues
 
     def inspect(self):

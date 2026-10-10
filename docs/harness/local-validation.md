@@ -76,12 +76,48 @@ python3 -B ai/harness/run.py reuse next-run regression --source issue-17 --reaso
 | 종류 | 통과에 필요한 근거 |
 |---|---|
 | test / unittest | 실제 실행 명령 영수증, 단일 unittest 최종 요약 OK, 실행 건수 1 이상, 실패·오류·예상 밖 성공 0. 종료 코드 0이어도 FAILED 요약은 거부 |
-| test / junit | 새 보고서의 실제 testcase, 실행 건수 1 이상, 실패·오류 0, 보고서 경로·체크섬 |
+| test / junit | 새 보고서 전체의 실제 testcase, 실행 건수 1 이상, 실패·오류 0, 보고서별 경로·체크섬과 집계, Gradle은 대상 작업 실행 상태 |
 | build | 실제 명령 종료 0, 실행 영수증, 캐시·미실행 표시 없음 |
 | static | 실제 명령 종료 0, 실행 영수증, 캐시·미실행 표시 없음 |
 | qa / review | begin 당시 대상, 실제 확인 기간, 범위·절차·보고 주체·요약, 비어 있지 않은 근거 파일·체크섬, 요구된 독립 수행 보고 |
 
-테스트의 `executed`는 스킵을 제외한 실제 수행 건수이며 실패·오류 건수를 별도 기록한다. 다른 종류에는 테스트 건수를 적용하지 않는다. JUnit은 `adapter: junit`, `report: ai/local-state/<새 경로>.xml`을 선언하고 해당 경로에 보고서를 생성하는 명령을 사용한다. 기존 보고서가 있으면 실행을 거부하므로 재실행에는 새 경로를 사용하거나 자신이 만든 기존 보고서를 정리한다. `UP-TO-DATE`·`FROM-CACHE`·`NO-SOURCE`를 감지하면 새 실행 통과로 처리하지 않는다. 다른 도구의 캐시는 도구에 맞는 실제 실행 옵션을 선언하는 책임이 있다.
+테스트의 `executed`는 스킵을 제외한 실제 수행 건수이며 실패·오류 건수를 별도 기록한다. 다른 종류에는 테스트 건수를 적용하지 않는다. JUnit은 `adapter: junit`, `report: ai/local-state/<새 경로>.xml`을 선언하고 해당 경로에 보고서를 생성하는 명령을 사용한다. 기존 보고서가 있으면 실행을 거부하므로 재실행에는 새 경로를 사용하거나 자신이 만든 기존 보고서를 정리한다. Gradle 테스트는 `gradle_tasks: [":test"]`처럼 검증 대상의 전체 작업 경로를 선언하고 `--console=plain`을 사용한다. 여러 대상 작업은 모두 선언한다. 출력의 `> Task :test`처럼 상태 접미사가 없는 대상 줄만 실제 실행으로 인정한다. 대상 작업의 `UP-TO-DATE`·`FROM-CACHE`·`NO-SOURCE`·`SKIPPED`·`FAILED`, 누락·중복·알 수 없는 상태는 거부한다. 종료 코드 0과 새 JUnit 보고서의 정상 실제 건수도 함께 필요하다. 다른 작업의 캐시·미실행 줄은 테스트를 거부하지 않는다. unittest는 실제 최종 요약으로 판단하며 합성 Gradle의 다른 작업 줄도 결과를 거부하지 않는다. 일반 build/static과 작업 줄 밖의 캐시 표시는 기존처럼 거부한다. Gradle을 직접 실행하거나 JUnit 명령 출력에 Gradle 작업 줄이 있으면 대상 선언이 없을 때 이유를 안내하고 거부한다. 다른 도구의 캐시는 도구에 맞는 실제 실행 옵션을 선언하는 책임이 있다.
+
+### 여러 JUnit 보고서 선언
+
+기존 `report` 문자열과 CLI 인자는 그대로 사용할 수 있다. 여러 XML에는 `reports` 배열을 사용하며 `report`와 동시에 선언하지 않는다. 배열 요소는 상대 XML 파일, 디렉터리 또는 glob 패턴이다. 디렉터리는 하위 전체 `*.xml`을 포함한다. 패턴의 첫 와일드카드 앞 디렉터리, 파일의 부모 디렉터리가 해당 선택자의 보고서 범위다. 재귀 와일드카드 `**`는 경로 요소 전체로만 사용한다(`**/*.xml`). `**.xml` 같은 잘못된 패턴은 선언·실행 준비에서 거부하므로 명령이 실행되거나 running 기록이 남지 않는다. 각 선택자는 최소 하나의 XML과 연결되어야 한다. 경로를 정규화하고 중복을 제거한 뒤 모든 파일의 실제 testcase를 합산한다. testsuite/testsuites XML의 집계 속성은 신뢰하지 않으며 실제 실행·실패·오류·스킵을 기록한다. 전체 0건·스킵만·일부 실패/오류·형식 오류·보고서 누락을 거부한다.
+
+범위는 `ai/local-state/<실행별 디렉터리>/` 아래에 둔다. 실행 전 범위 내 XML이 하나라도 있으면 명령 실행 전에 거부한다. 새 출력 범위를 사용하거나 자신이 만든 이전 결과만 정리하고 재실행한다. 다른 실행의 XML을 복사하거나 기존 `build/test-results`를 새 결과로 연결하지 않는다. 심볼릭 링크는 허용하지 않는다. 여러 파일을 개별 나열해도 범위 안의 XML 전부를 선언해야 하므로 정상 파일만 고르고 실패 XML을 제외하면 거부된다. 별도 실행 범위 밖의 보고서는 자동 수집하지 않는다.
+
+파일별 경로·SHA-256과 전체 집계를 영수증에 연결한다. gate/resume/reuse는 선언한 범위를 다시 열어 파일 삭제·내용 변경·파일 추가·누락된 선택자를 검사한다. 건수가 같아도 내용이나 파일 집합이 달라지면 무효다. 결과 확인 뒤 자체 실험용 XML을 추가해도 기존 결과는 무효가 된다.
+
+예시(test 항목):
+
+```json
+{
+  "id": "product", "kind": "test", "required": true,
+  "role": "verification", "condition": "대상 테스트 실제 실행 및 전체 XML 정상",
+  "adapter": "junit", "gradle_tasks": [":test"],
+  "reports": ["ai/local-state/issue19-product-xml/TEST-*.xml"],
+  "command": ["./gradlew", "test", "--tests", "alfio.util.TemplateResourceTest",
+              "--tests", "alfio.util.ValidatorTest", "--console=plain", "--no-build-cache",
+              "-I", "ai/local-state/junit-output.gradle",
+              "-Dharness.reports=ai/local-state/issue19-product-xml"]
+}
+```
+
+이 예시에 필요한 임시 `ai/local-state/junit-output.gradle`(Groovy)은 제품 설정을 수정하지 않고 출력 경로만 지정한다. 이 파일도 `inputs`에 포함한다. 실행 ID별로 보고서 경로를 바꾼다. `--no-build-cache`만으로 UP-TO-DATE가 해제되는 것은 아니므로 대상 작업이 실제 실행됐는지 반드시 확인한다.
+
+```groovy
+allprojects {
+    tasks.withType(org.gradle.api.tasks.testing.Test).configureEach {
+        if (path == ':test') {
+            reports.junitXml.outputLocation = file(System.getProperty('harness.reports'))
+            reports.html.required = false
+        }
+    }
+}
+```
 
 JSON의 모양만으로 통과하지 않는다. 영수증·시각·종류별 근거·현재 대상과의 일치까지 검사한다. 로컬 파일을 악의적으로 모두 위조하는 행위나 명령이 실제 목적에 적합한지, 보고자가 진실하게 확인했는지를 증명하는 보안 실행기는 아니다. 수동 범위·독립 수행의 충분성은 Review와 WORKFLOW에서 확인한다. 결과를 기록한 주체와 선언한 수행 역할을 혼동하지 않는다.
 
@@ -92,6 +128,10 @@ Git 추적 파일 및 Git에서 무시하지 않는 미추적 파일의 내용·
 하네스 경계는 `AGENTS.md`, `.gitignore`, `ai/**`, `docs/harness/**`, `docs/conventions/git.md`, 하네스 CI 파일이다. 로컬 상태·임시 근거·Python 캐시와 `docs/harness/records/**`의 결과 요약은 코드 식별에서 제외한다. 이 제외를 제품 코드를 숨기는 용도로 사용하지 않는다. Git 제외 제품·환경 파일이 검증에 영향을 주면 반드시 `inputs`에 선언한다. 외부 프로세스·서비스 상태는 선언한 환경 요약과 실제 확인에 의존한다.
 
 `resume`은 유효한 결과를 유지해 표시하고 나머지 단계만 안내한다. 무효 판정은 현재 상태에서 계산하므로 상태 파일을 고쳐서 이전 `passed`를 덮어쓰지 않는다. 변경을 정확히 되돌려 코드·환경·조건이 이전 검증과 같아지면 그 결과는 다시 유효하다. 실행 중 중단된 항목은 다시 실행한다.
+
+## Windows 링크 검사의 실행 조건
+
+회귀의 일반 선언·경로 검사와 실제 심볼릭 링크 거부 검사는 별도 테스트다. Windows에서 링크 생성 권한이 없어 WinError 1314가 발생하면 해당 디렉터리/파일 링크 테스트만 사유를 표시해 skip한다. 일반 경로 검사는 계속 실행되며 스킵을 실제 실행 건수에 포함하지 않는다. 권한이 있는 환경에서는 실제 링크를 생성해 거부 동작을 확인한다. 다른 링크 준비 오류는 스킵하지 않고 실패로 처리한다. 개발자 모드나 관리자 권한 설정을 자동 변경하지 않는다.
 
 ## 기존 제품 커밋에 적용
 
