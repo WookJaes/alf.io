@@ -547,7 +547,7 @@ class RunTests(unittest.TestCase):
             with self.assertRaisesRegex(harness.Invalid, '패턴 문법 오류'):
                 harness.report_glob(self.root, 'ai/local-state/xml/*.xml')
 
-    def test_multiple_junit_declaration_scope_and_symlink_guards(self):
+    def test_multiple_junit_declaration_scope_guards(self):
         check = self.multiple_junit({})
         for selectors in ([], 'xml', [None], ['']):
             check['reports'] = selectors
@@ -559,15 +559,32 @@ class RunTests(unittest.TestCase):
         for selectors in (['/tmp/xml'], ['../xml'], ['build/test-results/*.xml'], ['ai/local-state']):
             check['reports'] = selectors; self.save_plan()
             with self.assertRaises(harness.Invalid): self.run.execute('test')
-        check['reports'] = ['ai/local-state/xml']
+
+    def make_symlink(self, path, target, directory=False):
+        try:
+            path.symlink_to(target, target_is_directory=directory)
+        except OSError as exc:
+            if getattr(exc, 'winerror', None) == 1314:
+                self.skipTest('심볼릭 링크 생성 권한 없음: Windows WinError 1314')
+            raise
+
+    def test_multiple_junit_directory_symlinks_are_rejected(self):
+        self.multiple_junit({}, ['ai/local-state/xml'])
         self.put('ai/local-state/elsewhere/a.xml', '<testsuite><testcase/></testsuite>')
-        (self.root / 'ai/local-state/xml').symlink_to(self.root / 'ai/local-state/elsewhere', target_is_directory=True)
-        self.save_plan()
+        self.make_symlink(self.root / 'ai/local-state/xml', self.root / 'ai/local-state/elsewhere', directory=True)
         with self.assertRaises(harness.Invalid): self.run.execute('test')
-        (self.root / 'ai/local-state/xml').unlink()
+
+    def test_multiple_junit_file_symlinks_are_rejected(self):
+        self.multiple_junit({}, ['ai/local-state/xml'])
+        self.put('ai/local-state/elsewhere/a.xml', '<testsuite><testcase/></testsuite>')
         (self.root / 'ai/local-state/xml').mkdir()
-        (self.root / 'ai/local-state/xml/alias.xml').symlink_to(self.root / 'ai/local-state/elsewhere/a.xml')
+        self.make_symlink(self.root / 'ai/local-state/xml/alias.xml', self.root / 'ai/local-state/elsewhere/a.xml')
         with self.assertRaises(harness.Invalid): self.run.execute('test')
+
+    def test_symlink_setup_unexpected_errors_are_not_skipped(self):
+        with patch.object(Path, 'symlink_to', side_effect=PermissionError('unexpected permission error')):
+            with self.assertRaises(PermissionError):
+                self.make_symlink(self.root / 'ai/local-state/link', self.root / 'ai/local-state/target')
 
     def test_junit_windows_rooted_and_drive_relative_scopes_are_invalid(self):
         root = PureWindowsPath('C:/repo')

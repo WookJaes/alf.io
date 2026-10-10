@@ -106,3 +106,16 @@
   - `ai/harness/run.py`: `7de0c59739933330eb5473083e57ae718da5fc30d5c4869824cfa849916af273`
   - `ai/tests/test_run.py`: `241756edd6d29f66f4aaf88fc4a80e1a14679e31bfdfed7d4a6d5763f53e72fe`
   - `docs/harness/local-validation.md`: `f17a10eb651d05bc9b551ba284c2258004edc2dbbd03e91b1d05adef8f9a8fe9`
+
+## Windows 링크 생성 권한 처리
+
+- 요청·출발 상태: 두 번째 리뷰 지적을 별도 커밋으로 수정한다. HEAD `bcc8b7f11`, 첫 번째 패턴 수정 커밋 이후 작업 트리 깨끗함. 현재 Codex 자체 Review/QA, 독립 수행 아님.
+- 수정 전 재현: 리뷰어의 일반 권한 Windows/Python 3.12에서 WinError 1314로 회귀 1건 오류가 발생했다. 로컬 macOS에서는 Path.symlink_to에 winerror=1314인 OSError를 주입하여 기존 혼합 경로/링크 테스트를 실행했고 총 1건·오류 1·스킵 0·성공 false를 확인했다. 주입 스크립트 종료 0(기대한 실패 확인), 실제 Windows 권한 재현으로 표시하지 않는다.
+- 수정 계획: 일반 선언·경로 테스트와 디렉터리/파일 링크 테스트를 분리한다. 실제 링크 생성 시 WinError 1314만 해당 링크 테스트의 사유 있는 skip으로 처리하며, 다른 준비 오류는 그대로 실패하게 한다. 권한 있는 환경의 실제 링크 거부 검증은 유지한다.
+
+- 수정 결과: 일반 선언·경로 테스트와 디렉터리/파일 링크 테스트를 각각 분리했다. 실제 symlink_to 실패의 winerror가 1314인 경우에만 해당 링크 테스트를 사유 있는 skip으로 처리한다. 기타 권한 오류는 전달하는 회귀도 추가했다. 권한 있는 환경에서는 실제 링크 생성 및 거부 검증을 수행한다. 하네스 구현·CI·권한 설정 변경 없음.
+- 검증: Python 3.9.6/macOS의 실제 링크 생성 가능한 환경, `issue19-symlink-fix`. `python3 -B ai/tests/check.py` 종료 0; `python3 -B -m unittest discover -s ai/tests -p 'test_*.py'` 종료 0, 실행 70·실패/오류/스킵 0. 합성 1314를 주입한 분리 테스트 3건은 일반 경로 1건 통과·링크 2건 skip·실패/오류 0(스크립트 종료 0). 스킵을 실제 실행 통과로 세지 않았다. 자체 QA/Review 후 gate/resume 각 0. 대상은 `bcc8b7f11` 위의 링크 테스트 수정이며 사소한 메서드 공백 정리 후에도 해당 전체 회귀 70건을 다시 확인했다.
+- 검증 한계·정리: 실제 일반 권한 Windows OS/Python 3.12는 미실행이며 오류 주입 결과와 구분한다. 임시 저장소와 링크는 unittest cleanup으로 제거했고 최소 근거만 Git 제외 위치에 남겼다. 제품 코드 변경이 없어 실제 Gradle·DB·E2E·브라우저는 반복 실행하지 않았다. 두 커밋은 로컬에만 저장하고 푸시·PR 본문 변경·외부 댓글을 하지 않는다.
+- 변경·커밋 범위: test_run.py·local-validation.md·이 작업 기록 3개 파일, 제목 `test: Windows 링크 생성 권한 부족 처리`. 첫 번째 패턴 수정과 목적을 분리했다. staged diff·공백·민감정보 확인 후 커밋하며 검증한 내용은 아래 체크섬으로 대조한다.
+  - `ai/tests/test_run.py`: `eaf568e34cfd8b71612c9a08c92f6acd331e01cb9fc6e03fa330e95db4ea4cbf`
+  - `docs/harness/local-validation.md`: `09021cec2630c0293380d2a96489e569d7f903618390d1e8f4cb3fff42b0128e`

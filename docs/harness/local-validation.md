@@ -129,6 +129,10 @@ Git 추적 파일 및 Git에서 무시하지 않는 미추적 파일의 내용·
 
 `resume`은 유효한 결과를 유지해 표시하고 나머지 단계만 안내한다. 무효 판정은 현재 상태에서 계산하므로 상태 파일을 고쳐서 이전 `passed`를 덮어쓰지 않는다. 변경을 정확히 되돌려 코드·환경·조건이 이전 검증과 같아지면 그 결과는 다시 유효하다. 실행 중 중단된 항목은 다시 실행한다.
 
+## Windows 링크 검사의 실행 조건
+
+회귀의 일반 선언·경로 검사와 실제 심볼릭 링크 거부 검사는 별도 테스트다. Windows에서 링크 생성 권한이 없어 WinError 1314가 발생하면 해당 디렉터리/파일 링크 테스트만 사유를 표시해 skip한다. 일반 경로 검사는 계속 실행되며 스킵을 실제 실행 건수에 포함하지 않는다. 권한이 있는 환경에서는 실제 링크를 생성해 거부 동작을 확인한다. 다른 링크 준비 오류는 스킵하지 않고 실패로 처리한다. 개발자 모드나 관리자 권한 설정을 자동 변경하지 않는다.
+
 ## 기존 제품 커밋에 적용
 
 제품 코드·E2E·DB 환경을 가져오지 않고 하네스 파일만 옮긴다. 이번 변경 목록은 `.gitignore`, `ai/WORKFLOW.md`, `ai/routing.md`, `ai/harness/run.py`, `ai/tests/check.py`, `ai/tests/test_run.py`, `ai/tests/test_check.py`, `ai/roles/review.md`, `ai/roles/verification.md`, `ai/templates/work.md`, `docs/harness/README.md`, 이 안내다. `ai/roles/documentation.md`, `implementation.md`, `orchestration.md` 삭제도 포함한다. 이번 작업 기록은 이식에 불필요하다.
