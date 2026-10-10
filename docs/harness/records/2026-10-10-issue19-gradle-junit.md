@@ -92,3 +92,17 @@
 - 커밋 범위: 하네스 구현·회귀·이 작업 MD 3개 파일. 제목 `fix: Windows JUnit 보고서 경로 오류 처리 보완`. 커밋 전 staged diff·공백·민감정보를 확인한다. 커밋 후 HEAD 변경과 로컬 검증 대상을 구분하며 아래 파일 체크섬으로 검증 내용과 커밋 내용의 일치를 확인한다.
   - `ai/harness/run.py`: `9aea6c80654b039adc015e41c9c7c73d8e3ee4fb7807d2a9020041e2da784cf1`
   - `ai/tests/test_run.py`: `9bc03b21528c31493f07efae769b3ada6bfad38ea1d40c9405bf42e6f525a2d1`
+
+## 잘못된 보고서 패턴 처리
+
+- 요청·출발 상태: 리뷰의 첫 번째 지적을 별도 커밋으로 수정한다. `fix/19-harness-gradle-junit` HEAD `5ebeb8a6c`, 시작 작업 트리 깨끗함. 현재 Codex 자체 Review/QA, 독립 수행 아님.
+- 수정 전 재현: 실제 임시 Git 저장소에서 reports에 `ai/local-state/xml/**.xml`을 선언하고 XML 생성 명령을 실행했다. 선언 수락·명령 실행·처리되지 않은 ValueError·저장 상태 running을 로컬 Python 3.9.6/macOS에서 직접 확인했다(직전 리뷰 확인 턴). 리뷰어의 Windows/Python 3.12 재현과 같은 실패 경로이며 이번 구현 전 근거로 연결한다.
+- 수정 계획: 선언과 실행 준비에서 재귀 와일드카드 문법을 검사하고, pathlib의 패턴 ValueError도 Invalid로 안내한다. 잘못된 입력으로 명령이 실행되거나 running 상태가 남지 않는지와 올바른 **/*.xml의 실제 집계를 회귀 검증한다. 링크 테스트 수정은 다음 별도 커밋으로 분리한다.
+
+- 수정 결과: reports 패턴을 선언 및 실행 준비에서 검사한다. **를 경로 요소 일부로 사용하면 Invalid로 안내한다. pathlib glob ValueError도 Invalid로 변환한다. 잘못된 패턴의 init 거부·run 종료 2·명령 미실행·상태 not_run 유지, 정상 재귀 패턴의 XML 2개/실행 3건과 예외 변환 회귀를 추가했다. 단일 report·기존 CLI 유지.
+- 검증: Python 3.9.6/macOS, 저장소 루트, `issue19-pattern-fix`. `python3 -B ai/tests/check.py` 종료 0; `python3 -B -m unittest discover -s ai/tests -p 'test_*.py'` 종료 0, 실행 67·실패/오류/스킵 0. 자체 QA/Review begin→record 후 gate/resume 각 0. 대상은 `5ebeb8a6c` 위의 해당 수정이다.
+- 변경·커밋 범위: run.py·test_run.py·local-validation.md·이 기록 4개 파일, 제목 `fix: JUnit 보고서 패턴 오류 사전 검증`. 링크 권한 처리·제품 코드·의존성·CI 설정은 변경하지 않았다. 실제 Windows/Gradle/DB/E2E/브라우저는 이번 패턴 수정 검증에서 실행하지 않았다. 푸시·PR 본문 변경·외부 댓글 없음.
+- 검증한 파일 내용(커밋 후 HEAD 변경은 별도이며 내용 체크섬을 대조한다):
+  - `ai/harness/run.py`: `7de0c59739933330eb5473083e57ae718da5fc30d5c4869824cfa849916af273`
+  - `ai/tests/test_run.py`: `241756edd6d29f66f4aaf88fc4a80e1a14679e31bfdfed7d4a6d5763f53e72fe`
+  - `docs/harness/local-validation.md`: `f17a10eb651d05bc9b551ba284c2258004edc2dbbd03e91b1d05adef8f9a8fe9`

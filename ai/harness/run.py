@@ -101,6 +101,8 @@ def validate_plan(plan):
                         if ('report' in item or not isinstance(reports, list) or not reports
                                 or not all(nonempty(r) for r in reports)):
                             raise Invalid('JUnit reports 상대 경로 배열 필요, report와 동시 사용 금지')
+                        for name in reports:
+                            validate_report_selector(name)
                     elif not nonempty(item.get('report')):
                         raise Invalid('JUnit 보고서 상대 경로 필요')
                 if 'gradle_tasks' in item:
@@ -189,10 +191,23 @@ def counts_junit(path):
         raise Invalid('JUnit 보고서 누락·형식 오류') from exc
 
 
-def report_scope(root, name):
-    """선택자의 고정 디렉터리를 실행별 보고서 범위로 사용한다."""
+def validate_report_selector(name):
     if not nonempty(name) or Path(name).anchor:
         raise Invalid('JUnit reports 저장소 기준 상대 경로 필요')
+    if '\x00' in name or any('**' in part and part != '**' for part in Path(name).parts):
+        raise Invalid('JUnit reports 패턴 문법 오류: **는 경로 요소 전체로 사용 (**/*.xml)')
+
+
+def report_glob(root, name):
+    try:
+        return list(root.glob(name))
+    except ValueError as exc:
+        raise Invalid('JUnit reports 패턴 문법 오류: 패턴을 수정한 뒤 재실행') from exc
+
+
+def report_scope(root, name):
+    """선택자의 고정 디렉터리를 실행별 보고서 범위로 사용한다."""
+    validate_report_selector(name)
     parts = Path(name).parts
     wildcard = next((i for i, part in enumerate(parts) if glob.has_magic(part)), None)
     if wildcard is not None:
@@ -233,7 +248,7 @@ def report_inventory(root, item):
         scope = report_scope(root, name)
         inventory.update(scope_xml(root, scope))
         if glob.has_magic(name):
-            paths = list(root.glob(name))
+            paths = report_glob(root, name)
         elif name.endswith('.xml'):
             paths = [root / name] if (root / name).exists() else []
         else:

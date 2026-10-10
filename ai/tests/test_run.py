@@ -516,6 +516,37 @@ class RunTests(unittest.TestCase):
                     (self.root / 'ai/local-state/xml' / added).unlink(missing_ok=True)
                 self.assertEqual(self.run.inspect()[0]['reasons'], [])
 
+    def test_invalid_junit_patterns_reject_before_command_and_state_transition(self):
+        for pattern in ('**.xml', 'foo**/*.xml', '***/*.xml'):
+            with self.subTest(pattern=pattern):
+                check = self.multiple_junit(
+                    {'ai/local-state/xml/TEST-a.xml': '<testsuite><testcase/></testsuite>'},
+                    ['ai/local-state/xml/' + pattern])
+                with self.assertRaises(harness.Invalid): harness.validate_plan(self.plan)
+                other = harness.Run(self.root, 'invalid-pattern')
+                with self.assertRaises(harness.Invalid): other.init(self.plan)
+                self.assertFalse(other.directory.exists())
+                self.assertEqual(harness.main(['--root', str(self.root), 'run', 'run-1', 'test']), 2)
+                self.assertFalse((self.root / 'ai/local-state/xml/TEST-a.xml').exists())
+                self.assertEqual(harness.read(self.run.directory / 'state.json')['results']['test']['status'], 'not_run')
+                with self.assertRaises(harness.Invalid): harness.report_scope(self.root, check['reports'][0])
+
+    def test_recursive_junit_pattern_reads_nested_reports(self):
+        self.multiple_junit({
+            'ai/local-state/xml/TEST-a.xml': '<testsuite><testcase/></testsuite>',
+            'ai/local-state/xml/nested/TEST-b.xml': '<testsuite><testcase/><testcase/></testsuite>'},
+            ['ai/local-state/xml/**/*.xml'])
+        self.assertTrue(self.run.execute('test'))
+        result = self.run.load()[1]['results']['test']
+        self.assertEqual(result['counts']['executed'], 3)
+        self.assertEqual(len(result['reports']), 2)
+        self.assertEqual(self.run.inspect()[0]['reasons'], [])
+
+    def test_junit_glob_value_error_becomes_harness_invalid(self):
+        with patch.object(Path, 'glob', side_effect=ValueError('invalid pattern')):
+            with self.assertRaisesRegex(harness.Invalid, '패턴 문법 오류'):
+                harness.report_glob(self.root, 'ai/local-state/xml/*.xml')
+
     def test_multiple_junit_declaration_scope_and_symlink_guards(self):
         check = self.multiple_junit({})
         for selectors in ([], 'xml', [None], ['']):
