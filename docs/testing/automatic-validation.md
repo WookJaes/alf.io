@@ -18,7 +18,11 @@ E2E 전용 작업에는 지연된 이미지 응답이 있어도 로그인 DOM을
 
 무료 행사로 Stripe·실제 결제·유료 청구 검증을 대체한다. 온라인 행사로 외부 지도·지오코딩 호출을 제외한다. `MAILER_TYPE=disabled` 및 disable-jobs로 외부 메일·정기 작업을 막는다. 실제 결제·메일 전달 및 기존 커스텀 메시지 발송은 검증하지 않는다. 데모 프로필은 행사 게시를 금지하므로 사용하지 않는다.
 
-GitHub Actions → **Local E2E validation** → **Run workflow**에서 검증할 브랜치를 선택한다. 외부 서버·BrowserStack 비밀 설정과 저장소 이름 제한이 없다. 수동 실행만 제공하며 일반 PR 필수 검사로 추가하지 않는다.
+GitHub Actions → **Local E2E validation** → **Run workflow**에서 검증할 브랜치를 선택한다. 외부 서버·BrowserStack 비밀 설정과 저장소 이름 제한이 없다. 관련 변경이 포함된 main 대상 `pull_request`(기본 opened·synchronize·reopened)와 main `push`에서 자동 실행한다. 문서 전용 변경은 자동 실행하지 않으며 수동 실행에는 경로 제한이 없다. 브랜치 보호·필수 검사 지정은 변경하지 않는다.
+
+E2E 경로 필터는 `src/main/**`(Java·설정·SQL·템플릿·기존 관리자 화면), `src/test/**`(전용 검사와 모든 테스트 컴파일 입력), `frontend/**`(공개·관리자 코드·화면·프론트 설정과 잠금 파일), `build.gradle*`, `settings.gradle*`, `gradle.properties`, `gradle/**`(Wrapper·버전 카탈로그), `gradlew`, `gradlew.bat`, `scripts/validation/e2e.sh`, 공통 `scripts/validation/check-results.py`·`test_results.py`, 해당 `.github/workflows/e2e-test.yml`이다. 뒤에 `!**/*.md`, `!**/*.rst`, `!**/*.adoc`를 적용해 이 경로 안의 문서도 제외한다. `docs/**`·루트 안내·별도 website 변경은 포함하지 않는다.
+
+취소 그룹은 `${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}`이다. 같은 PR의 동일 워크플로우만 그룹을 공유하고 `cancel-in-progress`는 PR에서만 true다. main push·수동 실행은 각 run ID로 분리하고 이전 실행을 취소하지 않는다. 다른 PR·DB 마이그레이션과도 분리한다. 취소된 실행은 검증 통과로 처리하지 않는다.
 
 ## DB 마이그레이션
 
