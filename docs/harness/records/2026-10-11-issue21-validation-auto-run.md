@@ -1,6 +1,6 @@
 # 이슈 #21 검증 자동 실행 연결
 
-- 작업 ID / 날짜 / 상태: issue21 / 2026-10-11 / in_progress
+- 작업 ID / 날짜 / 상태: issue21 / 2026-10-11 / incomplete — 로컬 구현·검증 완료, 원격 미검증
 - 요청·완료 기준·수정 범위: [이슈 #21](https://github.com/WookJaes/alf.io/issues/21). 두 워크플로우의 main 대상 PR·main push 자동 실행, 관련 경로 필터와 PR 중복 취소, 수동 실행 유지. 로컬 구현·검증·목적별 2개 커밋까지 수행하며 원격 확인은 후속 작업이다.
 - 실행 모드·실제 담당: 현재 Codex 순차 구현·자체 Review·자체 QA. 하위 에이전트와 독립 검토 없음.
 - 브랜치·기준 HEAD·시작 시 기존 변경: feat/21-validation-auto-run / c1863294cc32c6c56e5ae4a151c336574597c864 / 깨끗함. origin/main fetch 후 동일 SHA 확인. 충돌할 사용자 변경이 없어 기존 checkout 사용; 기존 실험 worktree·로컬 상태 보존.
@@ -34,3 +34,28 @@
 - 커밋 전 검증 파일 SHA-256: e2e-test.yml `7265b1001d7c49bee714760ae687e2d8e482a24d9a29a22d0b81268e6717df6a`, automatic-validation.md `b2a7df7eeb21d38e80db35503779d474c4b13a6ac843e0e8c10d96940115c8dc`. 커밋 직후 blob 내용과 비교해 일치를 확인한다.
 
 - 첫 커밋 전 gate issue21-e2e-run: 종료 0. structure 종료 0, 하네스 회귀 실제 70건, 결과 거부 회귀 실제 6건, 실패·오류·스킵 모두 0. 자체 QA·Review 유효. 이 판정은 위 출발 HEAD+diff에 대한 것으로 커밋 후 새 HEAD의 gate 통과를 뜻하지 않는다.
+
+### DB 마이그레이션 자동 실행 준비
+
+- 첫 커밋: `95a19e7b5d4ef9295e8c03b739615102335786af` — E2E 자동 실행. 커밋 blob의 두 검증 파일이 위 SHA-256 및 작업 트리와 일치함을 확인했다. 커밋으로 HEAD가 바뀌므로 이전 gate를 새 HEAD 통과로 사용하지 않는다.
+- 마이그레이션 이벤트·필터·취소 설정은 실제 현재 bootJar/프론트·전체 테스트 컴파일·공통 브라우저/예약/결과 검사 의존에 맞췄다. 자체 workflow·migration.sh만 전용으로 연결했다. 기존 고정 이전 릴리스·Java 17→25·30분·권한·실행 명령·테스트 기준을 보존했다.
+- 안내에 마이그레이션의 전체 필터·취소 정책·두 워크플로우 원격 후속 확인 순서·취소 정리 한계를 반영했다.
+- 둘째 검증 대상: 95a19e7b5d4ef9295e8c03b739615102335786af + migration workflow/안내 diff. E2E workflow·제품·검증 scripts/tests는 첫 실제 실행과 바이트 동일하다. E2E를 새 HEAD에서 재실행했다고 주장하지 않으며 자체 QA에서 기존 실행과 입력 동등성을 확인한다.
+- 둘째 선언: ai/local-state/issue21-migration/plan.json; 실행 ID issue21-migration-run. 구조·회귀·결과 검사·양쪽 YAML/필터/그룹 대조·실제 migration.sh·자체 Review/QA를 현재 대상에서 순차 수행한다.
+
+- 마이그레이션 최초 실제 실행은 종료 0·1건·실패/오류/스킵 0이었으나 실행 중 안내의 화면 검증 범위를 이전 앱 UI + 현재 앱 공개 API로 정정하여 하네스가 코드/조건 변경으로 invalid 판정했다. 이를 최종 gate 통과로 사용하지 않고 새 XML 범위 xml-final 및 새 실행 ID issue21-migration-final에서 최종 문서 고정 후 재실행한다. 정적 검사·회귀·자체 검토도 최종 대상에서 갱신한다.
+
+- 최종 정적 대조: 양쪽 각 88항목 + workflow 간 PR 취소 그룹 분리 1항목 = 177항목. main 이외 PR 대상/브랜치 push는 branches 필터로 제외, 수동은 필터 없음. .md/.rst/.adoc 문서만 바뀐 경우 제외. 두 jobs 설정은 출발 커밋의 파싱 결과와 동일.
+- config/HEADER는 license 검사, custom.jvmargs는 bootRun 전용이며 이 전용 bootJar/test 작업의 입력이 아니다. 루트 .env·docker-compose·배포 설정·website·하네스 상태는 이 앱의 임시 작업 디렉터리/환경 허용 목록·전용 Docker 실행과 연결되지 않아 포함하지 않았다. 공통 결과 검사·관련 회귀 파일은 양쪽 필터에 연결했다.
+- 첫 실제 E2E 이후 제품·프론트·Gradle·기존 scripts/tests·E2E workflow 추적 입력 2,201개가 첫 커밋과 바이트 동일함을 확인했다. 둘째 변경은 migration workflow·안내·이 기록뿐이며 E2E 실실행은 앞선 결과로 보고한다.
+- 최종 검증 파일 SHA-256: migration-test.yml `b1bdbc6e0ae6a65b5e0dcfa46acdf4e8230e45764b94d5c4e918c0e619e42c67`, automatic-validation.md `565d6c15b057922fe4c6a6b4e436aa6d5cceea9688a4d5661b4e521df9dfaf9e`. 둘째 커밋 blob과 비교한다. 해당 커밋은 `git log -1 -- .github/workflows/migration-test.yml`로 식별하고 커밋 직후 실제 SHA·전체 커밋 파일 체크섬 대응을 Git 제외 최소 근거 ai/local-state/issue21-migration/commits.md에 남긴다. 자기 자신의 SHA를 본문에 넣기 위한 커밋 재작성은 하지 않는다.
+
+
+### 최종 결과·커밋 경계
+
+- 최종 실제 명령: `bash scripts/validation/migration.sh`(기존 명령 그대로 실행 후 성공한 새 XML만 Git 제외 경로에 복사), 종료 0. `:migrationValidation` 실제 실행·1건·실패 0·오류 0·스킵 0. 고정 이전 소스 Java 17 빌드 → 이전 앱의 합성 UI 예약 → 같은 PostgreSQL 16.13 DB의 현재 앱 업그레이드·보존/Flyway/API 확인. XML: ai/local-state/issue21-migration/xml-final/; 실행 ID issue21-migration-final.
+- 최종 하네스 구조 종료 0, 하네스 회귀 실제 70건 및 결과 거부 회귀 실제 6건 종료 0·실패/오류/스킵 0. 자체 Review·QA 완료. `gate issue21-migration-final` 종료 0: 최종 commit 전 HEAD 95a19e7b5d4ef9295e8c03b739615102335786af + migration/안내 diff 기준이다.
+- 최종 자원 확인: Docker 컨테이너·검증 앱 JVM·ChromeDriver·alfio-previous/alfio-validation 임시 디렉터리 모두 잔여 없음. 사용자 데이터·프로세스·기존 worktree·도구 캐시를 삭제하지 않았다.
+- 둘째 커밋 목적/제목: `feat: DB 마이그레이션 검증 자동 실행 연결`. migration workflow·해당 안내/공통 원격 후속 설명·이 단일 기록의 추가 구간만 포함한다. 첫 커밋과 동일 목적의 파일이 겹쳐도 이미 저장된 E2E 구간은 다시 커밋하지 않는다. 최종 SHA와 파일 일치 확인은 위 Git 제외 commits.md 및 완료 보고에 연결한다.
+- 커밋 후 HEAD 차이로 이전 gate/resume가 무효화되는 것을 확인한다. 검증한 workflow/안내·검증 입력과 commit blob의 내용/체크섬이 동일하다는 근거만 사용하며 새 HEAD에서 테스트/gate를 재실행했다고 주장하지 않는다.
+- 로컬 구현·실제 검증 완료. 원격 main PR 자동 실행 → 같은 PR 후속 취소 → main push → 수동 실행 → 문서 전용 제외는 미실행. 실제 실행 URL 없음; 이슈 전체 완료는 미선언이다. 푸시·PR 생성·머지·원격 실행·외부 댓글·이슈 수정·노션 수정은 수행하지 않는다.

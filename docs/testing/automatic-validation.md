@@ -42,13 +42,27 @@ Java 17 경로를 `JAVA17_HOME`으로 지정한다. macOS에서는 설치된 Jav
 
 선정 근거: 이전 릴리스 CI의 PostgreSQL 10/15/16과 현재 포크 CI의 15/16/17이 겹치는 지원 major 16을 사용한다. 공식 PostgreSQL 16 지원은 [2028-11-09까지](https://www.postgresql.org/support/versioning/)다. 16.13은 E2E 실기동을 확인한 고정 마이너이며 최신 마이너 여부를 검사하는 작업은 아니다. 두 버전 간 새 버전 SQL/Java 마이그레이션은 없어 새 적용 수가 0일 수 있다. 그렇더라도 기존 DB의 현재 Flyway 검증·행사 data migration·보존 검사는 실제 수행한다. 자세한 실행 근거는 [작업 기록](../harness/records/2026-10-08-issue15-migration.md)에 있다.
 
-GitHub Actions → **Local DB migration validation** → **Run workflow**에서 검증할 브랜치를 선택한다. 현재 코드 체크아웃을 빌드하며 외부 latest 앱 이미지·레지스트리 로그인·기존 DB 비밀값을 사용하지 않는다. 전용 JUnit class는 `alfio.e2e.MigrationValidatorTest`로 이동했다. 이전 소스·JAR·앱·DB·브라우저는 성공·실패 후 정리한다. 유료 결제·외부 메일·모든 과거 버전 조합·PostgreSQL major upgrade는 범위 밖이다.
+GitHub Actions → **Local DB migration validation** → **Run workflow**에서 검증할 브랜치를 선택한다. 현재 코드 체크아웃을 빌드하며 외부 latest 앱 이미지·레지스트리 로그인·기존 DB 비밀값을 사용하지 않는다. 관련 변경이 포함된 main 대상 `pull_request`(기본 opened·synchronize·reopened)와 main `push`에서 자동 실행하며 `workflow_dispatch`도 유지한다. 문서 전용 변경은 자동 실행하지 않는다. 전용 JUnit class는 `alfio.e2e.MigrationValidatorTest`로 이동했다. 이전 소스·JAR·앱·DB·브라우저는 성공·실패 후 정리한다. 유료 결제·외부 메일·모든 과거 버전 조합·PostgreSQL major upgrade는 범위 밖이다.
+
+마이그레이션 경로 필터도 `src/main/**`, `src/test/**`, `frontend/**`, `build.gradle*`, `settings.gradle*`, `gradle.properties`, `gradle/**`, `gradlew`, `gradlew.bat`, 공통 `scripts/validation/check-results.py`·`test_results.py`를 포함한다. 전용 입력은 `scripts/validation/migration.sh`와 `.github/workflows/migration-test.yml`이다. 뒤의 `!**/*.md`, `!**/*.rst`, `!**/*.adoc`로 경로 내부 문서도 제외한다. 현재 `bootJar`가 양쪽 프론트를 포함하고 이전 앱의 UI 예약 흐름과 업그레이드 후 공개 API를 확인하며, 전체 테스트 소스를 컴파일하고 공통 환경·브라우저·예약 흐름을 사용하므로 프론트와 테스트 입력도 필요하다. 이전 릴리스 소스는 기존 고정 SHA를 유지한다. 다른 전용 스크립트·워크플로우 및 별도 website는 포함하지 않는다.
+
+취소 그룹·정책은 E2E와 같은 식을 사용하되 워크플로우 이름으로 분리한다. 같은 PR의 마이그레이션 새 실행만 이전 마이그레이션 실행을 취소한다. 다른 PR·E2E·main push·수동 실행과 섞이지 않으며 push·수동 실행은 run ID별로 분리해 취소하지 않는다.
+
+## 원격 후속 확인
+
+로컬 YAML·필터·취소 식 확인과 실제 로컬 테스트는 GitHub 이벤트의 동작 증거를 대신하지 않는다. 원격 실행이 허용된 후 다음 순서로 **두 워크플로우 각각** 확인한다.
+
+1. 관련 코드가 바뀐 main 대상 PR에서 자동 실행과 테스트 실제 건수·종료 결과·검증 SHA를 확인한다. PR의 기본 checkout은 merge ref이므로 실행의 head SHA와 실제 `git rev-parse HEAD`도 구분해 기록한다.
+2. 같은 PR에 후속 변경을 올려 이전 실행이 cancelled, 최신 실행이 실행되는지 확인한다. 다른 PR·다른 워크플로우의 실행은 유지되어야 한다. 취소를 통과로 계산하지 말고 임시 앱·DB 정리도 확인한다.
+3. main 반영 후 push 이벤트로 실행되는지 확인한다. 새 push가 이전 push·수동 실행을 취소하지 않는지도 확인한다.
+4. Actions → 해당 검증 → Run workflow에서 브랜치를 선택해 수동 실행한다. 문서 전용 변경도 수동 검증할 수 있다.
+5. 문서 전용 PR·push에서는 자동 실행이 생기지 않는지 확인하고 각 실제 실행 URL·이벤트·검증 커밋·결과를 기록한다. 경로 필터는 [GitHub의 diff 판정](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#git-diff-comparisons)(3,000파일 제한, 1,000커밋 초과·diff timeout 시 실행)에 따르므로 큰 변경은 수동 확인도 필요하다. 필수 검사 지정은 이 작업에 포함하지 않는다.
 
 ## 실행 결과·정리
 
 전용 테스트 task는 UP-TO-DATE로 생략되지 않으며 `--no-build-cache`를 사용한다. 앱 빌드의 변경 없는 입력은 재사용할 수 있지만 테스트 실행으로 계산하지 않는다. 실행 전 해당 task의 이전 XML만 제거한다. 종료 코드와 새 XML의 tests/failures/errors/skipped를 확인하고 테스트 0건·스킵이 하나라도 있으면 실패한다. Gradle·앱 준비·브라우저·DB 검사 실패는 비정상 종료로 전달된다.
 
-테스트의 finally/AutoCloseable로 브라우저·앱·컨테이너·임시 앱 로그를 정리하고 Testcontainers Ryuk도 비정상 JVM 종료의 컨테이너 정리를 지원한다. 강제 OS 종료 등으로 정리 완료를 확인할 수 없으면 해당 실행을 성공으로 보고하지 않는다. 기존 사용자 컨테이너와 DB는 제거하지 않는다.
+테스트의 finally/AutoCloseable로 브라우저·앱·컨테이너·임시 앱 로그를 정리하고 Testcontainers Ryuk도 비정상 JVM 종료의 컨테이너 정리를 지원한다. 강제 OS 종료 등으로 정리 완료를 확인할 수 없으면 해당 실행을 성공으로 보고하지 않는다. 기존 사용자 컨테이너와 DB는 제거하지 않는다. GitHub 취소는 신호 전달 뒤 프로세스 트리를 강제 종료할 수 있으므로 finally·EXIT trap의 완료를 보장하지 않는다. 실행별 임시 자원·Ryuk·GitHub 호스팅 runner 폐기를 통한 격리를 유지하며, 취소 시 정리의 실제 완료 여부는 원격 후속 확인에서 관측한다.
 
 결과는 무시되는 `build/test-results/<task>`와 `build/reports/tests/<task>`에 남는다. 준비 실패 로그와 E2E 오류 DOM은 진단용으로 `build/validation`에만 남고 커밋하지 않는다. 이 원본에는 테스트용 비밀값이 포함될 수 있으므로 외부 게시하지 않는다. 원본 결과·JSON·로그·덤프·실제 개인정보는 커밋하지 않고 작업 MD에는 버전·명령·종료 코드·실제 건수·실패/원인/조치/재검증 요약만 기록한다.
 
