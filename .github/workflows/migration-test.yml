@@ -1,8 +1,49 @@
 name: Local DB migration validation
 on:
     workflow_dispatch:
+    pull_request:
+        branches: [main]
+        paths:
+            - 'src/main/**'
+            - 'src/test/**'
+            - 'frontend/**'
+            - 'build.gradle*'
+            - 'settings.gradle*'
+            - 'gradle.properties'
+            - 'gradle/**'
+            - 'gradlew'
+            - 'gradlew.bat'
+            - 'scripts/validation/check-results.py'
+            - 'scripts/validation/test_results.py'
+            - 'scripts/validation/migration.sh'
+            - '.github/workflows/migration-test.yml'
+            - '!**/*.md'
+            - '!**/*.rst'
+            - '!**/*.adoc'
+    push:
+        branches: [main]
+        paths:
+            - 'src/main/**'
+            - 'src/test/**'
+            - 'frontend/**'
+            - 'build.gradle*'
+            - 'settings.gradle*'
+            - 'gradle.properties'
+            - 'gradle/**'
+            - 'gradlew'
+            - 'gradlew.bat'
+            - 'scripts/validation/check-results.py'
+            - 'scripts/validation/test_results.py'
+            - 'scripts/validation/migration.sh'
+            - '.github/workflows/migration-test.yml'
+            - '!**/*.md'
+            - '!**/*.rst'
+            - '!**/*.adoc'
 permissions:
     contents: read
+concurrency:
+    group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
     migration:
         runs-on: ubuntu-latest
