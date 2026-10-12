@@ -2,6 +2,16 @@
 
 저장소 루트에서 실행한다. Java 25, Docker Engine(실행 중), Python 3, 인터넷 접근이 필요하다. E2E는 설치된 Chrome과 Selenium Manager가 준비한 호환 드라이버를 사용한다. CI의 ubuntu-latest에도 Chrome이 설치되어 있어야 한다. 새 라이브러리는 추가하지 않는다.
 
+## 일반 빌드 CI
+
+일반 빌드는 관련 변경이 포함된 main 대상 `pull_request`(opened·synchronize·reopened)와 main 브랜치 `push`에서 실행한다. 같은 저장소의 PR 브랜치 push에서는 실행하지 않아 동일 변경의 push/PR 중복 검증을 줄인다. PR은 기본 checkout의 merge ref, main push는 반영된 커밋을 검증한다. PR 생성 전 브랜치 검증은 필요한 로컬 Gradle 명령으로 수행한다.
+
+경로 필터는 `src/**`(제품·테스트·리소스·Dockerfile), `frontend/**`(공개/관리자 코드·설정·잠금 파일), `build.gradle*`, `settings.gradle*`, `gradle.properties`, `gradle/**`, `buildSrc/**`, `build-logic/**`, `config/**`(현재 license의 HEADER), `lib_exclude`(bootJar 제외 입력), `gradlew`, `gradlew.bat`, `.codecov.yml`, `codecov.yml`, 해당 `.github/workflows/build-on-push.yml`이다. 마지막 `!**/*.md`, `!**/*.rst`, `!**/*.adoc`로 경로 내부 문서를 제외한다. README·docs·하네스 설명·별도 website는 일반 빌드 입력에 포함하지 않는다.
+
+PostgreSQL 15·16·17의 기존 `build distribution jacocoTestReport`, Java 25·Codecov 업로드·Docker 이미지 jobs는 유지한다. 기존 릴리스 배포 입력을 보존하기 위해 모든 태그 push도 유지한다. [GitHub 규칙](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onpushpull_requestpull_request_targetpathspaths-ignore)상 태그 push에는 경로 필터가 적용되지 않으므로 문서 전용 제외는 브랜치 push/PR에 대한 조건이다. 이미지 jobs의 기존 `alfio-event/alf.io` 저장소 조건은 유지돼 이 포크에서는 실행하지 않는다.
+
+원격 실행이 허용되면 제품 변경 main 대상 PR에서 빌드 3개가 실행되고 PR 브랜치 push 빌드는 생기지 않는지 확인한다. 문서 전용 PR/브랜치 push 및 main push에서는 실행하지 않아야 하며, 제품 변경의 main 반영 후에는 실행해야 한다. 태그 검증이 필요할 때는 기존 실제 릴리스 절차에서 확인하고 검증만을 위해 임의 태그·이미지 배포를 만들지 않는다. 실행 URL·이벤트·검증 커밋·결과는 후속 기록에 남긴다.
+
 ## 자동 E2E
 
 ```sh

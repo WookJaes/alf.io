@@ -1,6 +1,50 @@
 name: build
 
-on: [push, pull_request]
+on:
+    push:
+        branches: [main]
+        # Preserve release-tag builds required by the existing image jobs.
+        tags: ['**']
+        paths:
+            - 'src/**'
+            - 'frontend/**'
+            - 'build.gradle*'
+            - 'settings.gradle*'
+            - 'gradle.properties'
+            - 'gradle/**'
+            - 'buildSrc/**'
+            - 'build-logic/**'
+            - 'config/**'
+            - 'lib_exclude'
+            - 'gradlew'
+            - 'gradlew.bat'
+            - '.codecov.yml'
+            - 'codecov.yml'
+            - '.github/workflows/build-on-push.yml'
+            - '!**/*.md'
+            - '!**/*.rst'
+            - '!**/*.adoc'
+    pull_request:
+        branches: [main]
+        paths:
+            - 'src/**'
+            - 'frontend/**'
+            - 'build.gradle*'
+            - 'settings.gradle*'
+            - 'gradle.properties'
+            - 'gradle/**'
+            - 'buildSrc/**'
+            - 'build-logic/**'
+            - 'config/**'
+            - 'lib_exclude'
+            - 'gradlew'
+            - 'gradlew.bat'
+            - '.codecov.yml'
+            - 'codecov.yml'
+            - '.github/workflows/build-on-push.yml'
+            - '!**/*.md'
+            - '!**/*.rst'
+            - '!**/*.adoc'
 
 jobs:
     build:
