@@ -50,3 +50,18 @@
 - 후속 원격 확인: 관련 변경 main 대상 PR 자동 실행 → PR 브랜치 후속 push의 별도 빌드/CodeQL 실행 없음 → 문서 전용 PR/main 브랜치 push 제외 → 관련 main push 실행 → CodeQL 정기 분석/업로드 유지. 기존 빌드 태그 경로는 실제 릴리스 절차에서 확인한다. 별도 테스트 태그/이미지 배포를 만들지 않는다.
 - 로컬 구현·검증 완료와 원격 이벤트 확인을 구분한다. 이번 요청 범위의 푸시·PR 생성·머지·워크플로우 dispatch·외부 댓글·이슈 수정은 수행하지 않는다. 원격 실행 URL은 새로 생성하지 않는다.
 - 테스트·분석 코드 및 다른 CI가 불변이므로 전체 제품 테스트/3개 DB 버전·E2E·마이그레이션·화면 재실행은 생략했다. 비밀값·실제 사용자 데이터를 추가하지 않았고 Git 제외 검사 상태·캐시·원본 결과를 커밋하지 않는다. 사용자 데이터·프로세스·기존 실험 worktree를 정리하거나 변경하지 않았다.
+
+
+### PR #24 리뷰 보완: Lombok 입력 누락
+
+- [리뷰 지적](https://github.com/WookJaes/alf.io/pull/24#discussion_r4246919537)에 따라 루트 lombok.config가 실제 컴파일 입력인데 필터에서 빠진 것을 확인했다. 생성자 메타데이터·생성 코드 커버리지·annotation 사용 오류 정책이 빌드에 영향을 준다. 기존 CI 통과는 이 설정 단독 변경의 실행 누락을 검증하지 못했다.
+- 시작 브랜치 fix/23-ci-duplicate-runs, HEAD 9074d2758f75ad174d12fdb7ebf929e35f2ef1b2, 기존 변경 없음. 사용자 승인 범위는 수정·검증·추가 커밋까지이며 푸시·외부 답변·PR 본문 수정은 하지 않는다.
+- 계획: 수정 전 설정 단독 변경 누락 재현 → 두 workflow의 push/PR 필터 4곳에 lombok.config 추가 → 기존 안내에 입력 반영 → 단독/문서/혼합 및 기존 필터/이벤트/jobs 보존 확인 → 구조·회귀·자체 QA/Review·gate → 수정 목적의 커밋 1개.
+- 실행 모드: 현재 Codex 자체 수행, 독립 Review/QA·하위 에이전트 없음. 새 선언은 ai/local-state/issue23-lombok-tools/plan.json, 실행 ID issue23-lombok-run. 이전 실행/기록은 보존한다.
+
+- 수정 전 새 대표 경로 검사 종료 1: build/push에서 lombok.config 단독 변경이 실행되지 않는 것을 재현했다. 두 workflow 총 4곳에 입력을 추가하고 안내를 갱신했다. lombok.config 자체·제품·Gradle·jobs·기타 workflow는 변경하지 않는다.
+
+- 수정 후 YAML·경로·이벤트·jobs·다른 workflow 보존 정적 대조 243항목 종료 0. 양쪽 push/PR의 네 목록 각각 Lombok 설정 단독 포함·README 단독 제외·둘의 혼합 포함 확인. 추가 케이스는 Git 제외 검사 근거이며 선언형 설정을 복제하는 새 추적 테스트는 추가하지 않았다.
+- `python3 -B ai/tests/check.py` 종료 0, `python3 -B -m unittest discover -s ai/tests -p test_*.py` 실제 70건·실패/오류/스킵 0. 자체 QA·Review 완료, `gate issue23-lombok-run` 종료 0. 현재 기준은 9074d2758f75ad174d12fdb7ebf929e35f2ef1b2 + 수정 diff다. 실제 제품 테스트·CodeQL 분석·GitHub 이벤트는 실행하지 않았다. 설정 내용/제품/작업 명령이 불변인 필터 보완이므로 기존 제품/분석 실행과 Gradle dry-run을 다시 수행하지 않았다.
+- 수정 검증 SHA-256: build workflow `74788652437fce51ab28133b07156ea6f0601962774a621b37c6e4639a8c44eb`, CodeQL workflow `677eb83f1abbf9178c9f7add3a8613e9bafab83147740e092bebe74ab98f6d07`, 안내 `d0cdaa6edcebe8d4bc3ddb842c2ce7d6a5305f9550de44b8b7928b9480e5be9a`. 커밋 직후 해당 blob 내용 일치 및 HEAD 변경에 따른 기존 gate 무효를 확인하고 실제 커밋 대응을 Git 제외 ai/local-state/issue23-lombok-tools/commits.md에 기록한다.
+- 로컬 리뷰 보완·검증 완료. 수정 커밋은 이후 사용자 승인하에 푸시해야 원격 PR에 반영된다. 기존 PR 본문·리뷰 댓글·이슈는 변경하지 않는다. 후속 리뷰 재확인·원격 CI와 Lombok 설정 단독 실제 이벤트는 별도이며 로컬 확인만으로 원격 완료를 주장하지 않는다.
