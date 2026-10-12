@@ -1,6 +1,6 @@
 # 이슈 #23 빌드·CodeQL 실행 최소화
 
-- 작업 ID / 날짜 / 상태: issue23 / 2026-10-12 / in_progress
+- 작업 ID / 날짜 / 상태: issue23 / 2026-10-12 / completed — 요청된 로컬 구현·검증 범위 완료, 원격 이벤트 확인은 후속
 - 요청·완료 기준·수정 범위: [이슈 #23](https://github.com/WookJaes/alf.io/issues/23). 일반 빌드·CodeQL의 main 대상 PR/main 브랜치 push는 유지하고 다른 브랜치 push 중복·무관한 문서 전용 실행을 제외한다. 기존 검증·분석·정기 실행과 다른 워크플로우·Docker 배포 jobs를 보존한다. 사용자 요청 범위는 로컬 구현·검증·커밋까지다.
 - 실행 모드·실제 담당: 현재 Codex 순차 구현·자체 QA/Review, 하위 에이전트 없음.
 - 브랜치·기준 HEAD·시작 시 기존 변경: fix/23-ci-duplicate-runs / 38466c08d975640c228f7d507bf86f93f3a4cb1b / 깨끗함. origin/main fetch 후 해당 최신 main에서 분기. 기존 브랜치·worktree·로컬 상태 보존.
@@ -32,3 +32,21 @@
 - 하네스 구조 검사 종료0, 하네스 회귀 실제70건·실패/오류/스킵0. 자체 QA/Review와 gate issue23-build-run 종료0. 선언: ai/local-state/issue23-tools/build-plan.json. 기준은 38466c0 + 빌드workflow/안내diff, 커밋후HEAD 통과아님.
 - 첫 커밋 검증파일 SHA-256: build-on-push.yml `192de2ed765cb90a83c3a06d1ee630b3b2d28c2258abb459d595741fafeb5a4b`, 안내 `43e5439ee784bc55c368241fd9fdeb12a6f4432defaf071a211bfaa4b101f732`. 커밋blob과 내용일치를 확인한다.
 - 신규형식적 회귀는 추가하지 않고 기설치 검사도구·최소 정적 대조와 기존 하네스 회귀를 사용했다. 실제 제품 변경이 없으므로 전체DB버전테스트/E2E/마이그레이션/화면은 재실행하지 않는다.
+
+### CodeQL 변경·최종 검증 준비
+
+- 첫 커밋: 72758afa913a82e3d821f6c7da9fbd446b025cf6 — 일반 빌드 이벤트·필터·안내·기록. 검증 파일/기록이 커밋blob과 일치했다. HEAD 변경으로 이전 gate를 새 HEAD 통과로 사용하지 않는다.
+- CodeQL에 빌드 입력뿐 아니라 실제 감지 언어의 저장소 전체 확장자·패키지파일·전체 workflow/로컬 actions/CodeQL설정 경로를 포함한다. Python 하네스/검증 도구와 website JS/HTML도 분석 대상이므로 놓치지 않는다. md/rst/adoc 문서만 제외하며 분석 자체의 언어·query·분석경로는 축소하지 않는다.
+- CodeQL main PR/push 필터를 연결하고 기존 매일 UTC00:00(한국09:00) schedule을 유지한다. 분석·업로드·Java25·security-events/contents 권한과 기존 명령은 그대로다. 별도 workflow jobs와 제품·DB·의존성·기존 기록 변경 없음.
+- 최종 선언 ai/local-state/issue23-tools/codeql-plan.json, 실행 ID issue23-codeql-run. 검증 대상은 첫 커밋 + CodeQL/안내diff이며 최종 파일 고정 후 static/graph/structure/regression/자체 QA·Review/gate를 순차 실행한다.
+
+### 최종 결과·커밋 경계
+
+- 양쪽 YAML·대표 경로·main/PR 브랜치 이벤트·문서 전용/혼합 변경·태그/schedule 예외·기존 jobs/권한과 다른 3개 워크플로우 불변을 총 227항목 대조해 종료 0을 확인했다. actionlint는 미설치라 사용하지 않았으며 기설치 PyYAML과 GitHub 공식 이벤트/필터 문서로 검사했다. 이 로컬 대조는 GitHub 이벤트 실실행이 아니다.
+- CodeQL 작업 그래프: `./gradlew --no-daemon --console=plain --dry-run build -x test` 종료 0. bootJar·두 프론트·compileJava·processResources·licenseMain·build 연결 및 test 작업 제외 확인. 실제 CodeQL 분석·결과 업로드·제품 빌드/테스트는 수행하지 않았다.
+- 최종 구조 검사 종료 0, 하네스 회귀 실제 70건·실패/오류/스킵 0. 자체 QA·Review 완료 및 `gate issue23-codeql-run` 종료 0. 기준은 72758afa913a82e3d821f6c7da9fbd446b025cf6 + CodeQL/안내 diff이다.
+- 최종 검증 파일 SHA-256: CodeQL workflow `5f0ee3c9084a4051a222e24e9bf50c55bbd993acfd52229f5540bef9b8bcd5ac`, 안내 `540c97dceb39ca643436df142a0303970c3a4b8d26dac8b8f7550e693205b7e5`. 빌드 workflow는 첫 검증 이후 바이트 동일. 둘째 커밋 blob과 내용 일치를 확인하고 실제 SHA 대응은 Git 제외 ai/local-state/issue23-tools/commits.md와 완료 보고에 남긴다. 자기 자신의 SHA를 본문에 넣기 위해 커밋을 재작성하지 않는다.
+- 둘째 커밋 목적: CodeQL의 중복 실행·문서 전용 분석 제외 및 해당 안내/기록. 커밋 후 HEAD 변경으로 이전 gate/resume는 무효이며, 검증 내용과 커밋 내용 일치만 증명한다. 새 HEAD에서 테스트·gate를 재실행했다고 주장하지 않는다.
+- 후속 원격 확인: 관련 변경 main 대상 PR 자동 실행 → PR 브랜치 후속 push의 별도 빌드/CodeQL 실행 없음 → 문서 전용 PR/main 브랜치 push 제외 → 관련 main push 실행 → CodeQL 정기 분석/업로드 유지. 기존 빌드 태그 경로는 실제 릴리스 절차에서 확인한다. 별도 테스트 태그/이미지 배포를 만들지 않는다.
+- 로컬 구현·검증 완료와 원격 이벤트 확인을 구분한다. 이번 요청 범위의 푸시·PR 생성·머지·워크플로우 dispatch·외부 댓글·이슈 수정은 수행하지 않는다. 원격 실행 URL은 새로 생성하지 않는다.
+- 테스트·분석 코드 및 다른 CI가 불변이므로 전체 제품 테스트/3개 DB 버전·E2E·마이그레이션·화면 재실행은 생략했다. 비밀값·실제 사용자 데이터를 추가하지 않았고 Git 제외 검사 상태·캐시·원본 결과를 커밋하지 않는다. 사용자 데이터·프로세스·기존 실험 worktree를 정리하거나 변경하지 않았다.

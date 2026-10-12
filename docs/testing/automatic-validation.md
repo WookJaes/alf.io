@@ -12,6 +12,16 @@ PostgreSQL 15·16·17의 기존 `build distribution jacocoTestReport`, Java 25·
 
 원격 실행이 허용되면 제품 변경 main 대상 PR에서 빌드 3개가 실행되고 PR 브랜치 push 빌드는 생기지 않는지 확인한다. 문서 전용 PR/브랜치 push 및 main push에서는 실행하지 않아야 하며, 제품 변경의 main 반영 후에는 실행해야 한다. 태그 검증이 필요할 때는 기존 실제 릴리스 절차에서 확인하고 검증만을 위해 임의 태그·이미지 배포를 만들지 않는다. 실행 URL·이벤트·검증 커밋·결과는 후속 기록에 남긴다.
 
+## CodeQL CI
+
+CodeQL도 관련 변경이 포함된 main 대상 `pull_request`와 main 브랜치 `push`에서 실행하며 PR 브랜치 push는 제외한다. 기존 `0 0 * * *` 정기 실행(UTC 00:00, 한국 시간 09:00)은 그대로 유지하며 문서 변경 여부와 무관하게 기본 브랜치를 분석한다. 기존 CodeQL init·`./gradlew build -x test`·analyze·권한·Java 설정을 바꾸지 않는다.
+
+일반 빌드와 공통인 `src/**`, `frontend/**`, `build.gradle*`, `settings.gradle*`, `gradle.properties`, `gradle/**`, `buildSrc/**`, `build-logic/**`, `config/**`, `lib_exclude`, `gradlew`, `gradlew.bat`를 포함한다. CodeQL은 현재 Java·JavaScript·Python·Actions를 자동 감지하므로, 추가로 저장소 전체 `**/*.java`, `**/*.kt`, `**/*.kts`, `**/*.js`, `**/*.jsx`, `**/*.ts`, `**/*.tsx`, `**/*.mjs`, `**/*.cjs`, `**/*.py`, `**/*.html`과 패키지 입력 `**/package.json`, `**/package-lock.json`, `**/pnpm-lock.yaml`, `**/pnpm-workspace.yaml`, `**/yarn.lock`, `.github/workflows/**`, `.github/actions/**`, `.github/codeql/**`를 포함한다. 하네스/검증 도구 Python 및 website의 JavaScript·HTML·패키지 변경도 분석 실행 대상이다. HTML은 스크립트를 포함할 수 있는 분석 입력으로 취급한다.
+
+마지막 `!**/*.md`, `!**/*.rst`, `!**/*.adoc`로 문서 전용 변경을 제외한다. 이는 [워크플로우 실행 필터](https://docs.github.com/en/code-security/reference/code-scanning/workflow-configuration-options)이며 CodeQL 분석 자체의 languages/paths-ignore를 변경하거나 검사 대상을 줄이지 않는다. 빌드의 Codecov 전용 설정은 CodeQL 전용 입력으로 추가하지 않는다. 태그 push는 일반 빌드/기존 배포 경로에서 처리하고 CodeQL은 main 브랜치·PR·정기 실행으로 검증한다.
+
+후속으로 제품 변경 PR과 하네스 Python/Actions 변경 PR에서 분석이 실행되는지, 후속 PR 브랜치 push가 별도 분석을 생성하지 않는지, 문서 전용 PR/main push에서 분석이 생기지 않는지 확인한다. 제품 변경 main push 및 기존 정기 실행의 분석/결과 업로드 성공도 확인한다. 빌드와 함께 경로 필터의 [GitHub diff 제한](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#git-diff-comparisons)을 따르며, 로컬 대표 경로 대조를 실제 원격 이벤트 확인으로 표시하지 않는다. 브랜치 보호·필수 검사 지정은 변경하지 않는다.
+
 ## 자동 E2E
 
 ```sh
