@@ -23,10 +23,10 @@
 | 완료 기준 | 변경·확인 내용 | 명령·절차 | 종료 코드·실제 건수 | 증거·결과 |
 |---|---|---|---|---|
 | 컴파일 | 최종 Gradle test의 재실행으로 Java·테스트 소스 컴파일 | 아래 회귀 명령, rerun-tasks | 0, 테스트 건수와 별개 | 실제 테스트 실행까지 완료. 별도 bootJar·프론트 빌드 미실행 |
-| 예약 상태·빈 시각 | enum 전체 14종, null은 빈 값 | EventApiControllerDocumentsTest | 최종 단위 25건, 실패·오류·스킵 0 | JUnit 1파일 |
-| 시간대·경계 | 서울 자정, 미국 연도/날짜 경계, 취리히 DST 6사례 | 같은 단위 테스트 | 위 25건에 포함 | withZoneSameInstant 결과 명시 기대값 |
-| 기존 컬럼·권한 | 일반11열 값·전자청구 기존15열/빈값·값 있음, 빈 문서, 접근검사 선행·거절 시 조회 없음 | 같은 단위 테스트 및 자체 diff 대조 | 위 25건에 포함, diff check 0 | Repository·Manager·권한 정책 변경 없음 |
-| 기존 청구·취소 회귀 | 청구서 생성·결제·취소·대변전표 | BillingDocumentCreationIntegrationTest 9건, BillingDocumentManagerTest 12건 | 21건, 실패·오류·스킵 0 | PostgreSQL Testcontainers, JUnit 2파일 |
+| 예약 상태·빈 시각 | enum 전체 13종, null은 빈 값 | EventApiControllerDocumentsTest | 최종 단위 24건, 실패·오류·스킵 0 | JUnit 1파일 |
+| 시간대·경계 | 서울 자정, 미국 연도/날짜 경계, 취리히 DST 6사례 | 같은 단위 테스트 | 위 24건에 포함 | withZoneSameInstant 결과 명시 기대값 |
+| 기존 컬럼·권한 | 일반11열 값·전자청구 기존15열/빈값·값 있음, 빈 문서, 접근검사 선행·거절 시 조회 없음 | 같은 단위 테스트 및 자체 diff 대조 | 위 24건에 포함, diff check 0 | Repository·Manager·권한 정책 변경 없음 |
+| 기존 청구·취소 회귀 | 청구서 생성·결제·취소·대변전표 | BillingDocumentCreationIntegrationTest 8건, BillingDocumentManagerTest 14건 | 22건, 실패·오류·스킵 0 | PostgreSQL Testcontainers, JUnit 2파일 |
 | 실제 Excel 다운로드 | 실제 Jetty HTTP 요청 4회, HTTP200·MIME·attachment 이름, 별도 ZIP/XML 확인 | 합성 Principal 필터 + 실제 Controller/AccessService/DB, QA | 다운로드4파일·8출력행, ZIP/XML 절차 exit0 | 시점별 중복 행 합계이며 고유 문서 8건 아님 |
 | 실제 DB | 일반 예약1건 대기→확정→취소, 확정 시각 갱신1행, 별도 대변전표 예약1건 | 실제 예약/취소 서비스와 JDBC 조회 | confirmation_ts update 영향1행, 현재 CANCELLED·문서 count 일치 | 테스트 내 query/assert, 이후 공통 DataCleaner 정리 |
 | 권한 없는 HTTP | 실제 AccessService의 AccessDenied·응답 본문·attachment 없음 | 합성 비소유자 요청 | 차단1회 | 기존 컨트롤러 ExceptionHandler가 HTTP500으로 반환. 범위 밖 한계 |
@@ -96,12 +96,12 @@
 - 최신 원격 main: fetch exit0, HEAD와 origin/main 모두 `bd2119d220a9f1346e725c7da1e94c7e76d0e812`. `feat/27-billing-document-status`를 이 기준으로 새로 생성했다. 하위 AGENTS.md 없음, 루트 EditorConfig·기존 Java/JUnit 관례 확인.
 - 이번 작업은 기존 구현의 리뷰·재검증·기록 정정이며 새 구현 소요 시간을 복원하지 않는다. 앞 절의 531초는 이전 기록의 관측값이다. 이번 구간에 합산하거나 상단 비교표에 신규 구현 시간으로 넣지 않는다.
 - 선언: `ai/local-state/issue27-current-config/plan.json`. 실행 영수증: `ai/local-state/issue27-current-20261013/`. 필수 regression/qa/review, 자체 수행. 하네스·환경 inputs 및 제품 내용 해시는 앞 기록과 동일. 하네스 자체 변경·새 의존성·공개 API 요청 변경·DB 마이그레이션 없음.
-- 실제 회귀: 04:09:53.838208–04:10:16.132220 UTC, exit0, `:test EXECUTED`, **46건/실패0/오류0/스킵0**. 단위25, 청구문서 통합9, Manager12. 새 XML3개 전체 `ai/local-state/issue27-current-xml/` 확인. 컴파일도 실행됐으며 bootJar·프론트 빌드는 미실행.
+- 실제 회귀: 04:09:53.838208–04:10:16.132220 UTC, exit0, `:test EXECUTED`, **46건/실패0/오류0/스킵0**. 단위24, 청구문서 통합8, Manager14. 새 XML3개 전체 `ai/local-state/issue27-current-xml/` 확인. 컴파일도 실행됐으며 bootJar·프론트 빌드는 미실행.
 - 명령: 앞의 최종 회귀 명령에서 다운로드 경로를 `ai/local-state/issue27-current-downloads`, XML 경로를 `ai/local-state/issue27-current-xml`로 바꿔 현행 `run`으로 실제 실행. 캐시·이전 실행 재사용 아님.
 - 실제 Excel: Jetty HTTP200·MIME·attachment 검증 후 **4파일·8출력행**. pending1/OFFLINE_PAYMENT/빈 값, completed2/COMPLETE/2026-10-13 01:30, cancelled2/CANCELLED/동일 확정일, credit-note3/CREDIT_NOTE_ISSUED/2026-10-13 12:00. 별도 Python ZIP/XML 확인 exit0, 전 행13열·끝2열 및 값 확인. 이번 실물의 크기·SHA256은 `ai/local-state/issue27-current-config/qa.md`에 보존. 앞 실물 표는 이전 실행 파일이다.
 - DB: 실제 예약2건의 기존 서비스 처리, 확정시각 update1행, CANCELLED 조회 및 문서 count 정합성 통과. HTTP 비소유자 거절1회·attachment 없음. 실제 로그인 대신 테스트 Principal을 사용했으며 기존 AccessService는 실제 실행. 기존 HTTP500 반환 한계 유지.
 - 화면: UI·브라우저·Excel 앱 렌더링 미실행. 다운로드 자체는 실제 HTTP 서버로 확인. 스키마 변경 없음; 마이그레이션·전체 제품 회귀·원격CI·실제 결제·외부메일 미실행. 관련 검증 범위 밖이거나 요청의 push 제외에 따름.
-- 자체 리뷰: 제품 diff6행, enum14종·서울 자정/미국 연도 경계/취리히 DST6사례, 기존 일반11/전자청구15열 및 조회SQL·권한 보존을 fresh46건·실물과 대조. 신규 제품 결함0. 기존 기록의 원격 커밋 링크·2커밋 계획·Notion 저장 완료 주장은 현재 Git/Notion 상태와 불일치해 이 절로 정정했다. 이번 커밋 전 실제 Notion 갱신·재조회를 수행한다.
+- 자체 리뷰: 제품 diff6행, enum13종·서울 자정/미국 연도 경계/취리히 DST6사례, 기존 일반11/전자청구15열 및 조회SQL·권한 보존을 fresh46건·실물과 대조. 신규 제품 결함0. 기존 기록의 원격 커밋 링크·2커밋 계획·Notion 저장 완료 주장은 현재 Git/Notion 상태와 불일치해 이 절로 정정했다. 이번 커밋 전 실제 Notion 갱신·재조회를 수행한다.
 - 재시도: Git fetch sandbox 실패→escalation 성공1, Docker 조회 sandbox 실패→escalation 성공1, GitHub connector 필수 인자 누락→repo/issue_number 지정 성공1. 실행 중 재시도3건(환경2·도구1). 회귀 실패0. Review 근거가 완료되기 전 show의 거부는 정상 대기 판정이며 결함·재시도로 계산하지 않음.
 - 하네스 운영 사건1: regression 실행 중 qa begin을 조기 호출해 종료 저장에서 not_run으로 복원됨. 종료 후 새 begin→실제 실물 확인→record로 순차 복구. 테스트 재시도와 별도로 기록. 하네스 변경 없이 사용 규칙 준수. 사람 개입 관측 없음.
 - 하네스 기여: 새 XML 전체·실제46건·Gradle 실행 상태·내용/환경 해시를 연결하고 Review 실행 중 완료를 거부. 상태 유실은 show에서 발견해 올바르게 재기록. 필수 검증 최종 누락0, 완료 리뷰 제출 후 재작업0, 외부 리뷰 게시0. 독립 리뷰·브라우저 검증을 대체하지 않음.
@@ -118,3 +118,9 @@
 - 앞 기록에 적혔던 두 커밋 계획·원격 링크는 현재 이번 변경의 근거가 아니므로 제거했다. 사용자 승인에 따라 기능·회귀·[사용 안내](../../billing-document-export.md)·이 MD를 **커밋1개**로 묶는다. 로컬 식별자는 커밋 후 Notion과 최종 보고에 기록한다. 원격 commit/MD 링크는 push 전 확인된 근거로 사용하지 않는다.
 - [Notion 작업 기록](https://app.notion.com/p/alf-3f1d39b5368d803e8cfdd857b77c88ba)의 맨 아래 기존 준비 틀을 이슈 #27 단일 기록으로 갱신하고 저장 후 재조회에서 제목1개·175초·46건·미측정·한계를 확인했다. 다른 기존 기록·상단 비교표 수치는 보존하고 이번 측정 경계 차이를 표시한다.
 - 기록 정리·Notion 반영·재조회·커밋·보고는 필수 제품 검증/리뷰 종료 후 후처리로 분리한다. 원격 push·PR·외부 댓글·병합은 수행하지 않는다.
+
+
+## 독립 리뷰 후 기록 정정
+
+- 독립 서브에이전트가 기존 JUnit XML과 예약 상태 enum을 읽기 전용으로 재검토해 세부 건수 오류를 발견했다. 단위24·청구문서 통합8·Manager14건, 통합/Manager 합계22건, 예약 상태13종으로 MD·Notion을 정정했다. 전체46건·실패0·오류0·스킵0은 동일하다.
+- 기존 보고서를 다시 집계한 결과이며 테스트 재실행·제품 코드 변경은 없다. 제품 측정 종료 이후 기록 정정으로 기존175초에 합산하지 않는다. 문서 검사·공백 검사·정정 diff와 Notion 재조회로 확인한다. 별도 문서 정정 커밋을 추가하고 로컬 식별자는 Notion에 기록한다.
