@@ -26,6 +26,7 @@ import alfio.manager.*;
 import alfio.manager.i18n.I18nManager;
 import alfio.manager.payment.custom.offline.CustomOfflineConfigurationManager;
 import alfio.manager.payment.custom.offline.CustomOfflineConfigurationManager.CustomOfflinePaymentMethodDoesNotExistException;
+import alfio.manager.support.AccessDeniedException;
 import alfio.manager.support.extension.ExtensionCapability;
 import alfio.manager.system.ConfigurationLevel;
 import alfio.manager.system.ConfigurationManager;
@@ -770,7 +771,14 @@ public class EventApiController {
 
     @GetMapping("/events/{eventName}/all-documents-xls")
     public void getAllDocumentsXls(@PathVariable String eventName, HttpServletResponse response, Principal principal) throws  IOException {
-        accessService.checkEventOwnership(principal, eventName);
+        try {
+            accessService.checkEventOwnership(principal, eventName);
+        } catch (AccessDeniedException e) {
+            response.setStatus(HttpStatus.FORBIDDEN.value());
+            response.setContentType("text/plain;charset=UTF-8");
+            response.getWriter().write(e.getMessage());
+            return;
+        }
 
         Event event = loadEvent(eventName, principal);
         var formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");

@@ -17,6 +17,7 @@
 package alfio.controller.api.admin;
 
 import alfio.manager.AccessService;
+import alfio.manager.support.AccessDeniedException;
 import alfio.manager.EventManager;
 import alfio.manager.TicketReservationManager;
 import alfio.manager.system.ConfigurationManager;
@@ -130,6 +131,18 @@ class EventApiControllerDocumentsTest {
             rows.get(1).subList(5, 9));
         assertEquals("COMPLETE", rows.get(1).get(15));
         assertEquals("2026-10-13 00:05", rows.get(1).get(16));
+    }
+
+    @Test
+    void returnsForbiddenWithoutReadingOrAttachingDocuments() throws Exception {
+        doThrow(new AccessDeniedException()).when(accessService).checkEventOwnership(principal, "example");
+        var response = new MockHttpServletResponse();
+        controller.getAllDocumentsXls("example", response, principal);
+        assertEquals(403, response.getStatus());
+        assertEquals("Access to resource has been denied", response.getContentAsString());
+        assertNull(response.getHeader("Content-Disposition"));
+        assertEquals("text/plain;charset=UTF-8", response.getContentType());
+        verifyNoInteractions(eventManager, reservationManager, configurationManager);
     }
 
     @Test
