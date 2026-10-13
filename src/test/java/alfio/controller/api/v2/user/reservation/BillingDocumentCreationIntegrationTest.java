@@ -49,6 +49,24 @@ import alfio.test.util.AlfioIntegrationTest;
 import alfio.test.util.IntegrationTestUtil;
 import alfio.util.BaseIntegrationTest;
 import alfio.util.ClockProvider;
+import alfio.test.util.XlsxTestUtil;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.boot.web.servlet.ServletRegistrationBean;
+import org.springframework.web.context.WebApplicationContext;
+import org.springframework.web.servlet.DispatcherServlet;
+import org.springframework.context.annotation.Bean;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import jakarta.servlet.Filter;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.ZonedDateTime;
 import org.apache.commons.lang3.tuple.Pair;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -76,7 +94,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.when;
 
 @AlfioIntegrationTest
-@ContextConfiguration(classes = {DataSourceConfiguration.class, TestConfiguration.class, ControllerConfiguration.class})
+@ContextConfiguration(classes = {DataSourceConfiguration.class, TestConfiguration.class, ControllerConfiguration.class, BillingDocumentCreationIntegrationTest.DownloadConfiguration.class})
 @ActiveProfiles({Initializer.PROFILE_DEV, Initializer.PROFILE_DISABLE_JOBS, Initializer.PROFILE_INTEGRATION_TEST})
 class BillingDocumentCreationIntegrationTest extends BaseIntegrationTest {
 
@@ -109,6 +127,43 @@ class BillingDocumentCreationIntegrationTest extends BaseIntegrationTest {
     @Autowired
     private AdminReservationApiController adminReservationApiController;
 
+
+    @Autowired
+    private NamedParameterJdbcTemplate jdbcTemplate;
+    @LocalServerPort
+    private int port;
+
+    @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
+    static class DownloadConfiguration {
+        @Bean
+        ServletRegistrationBean<DispatcherServlet> downloadDispatcher(WebApplicationContext context) {
+            return new ServletRegistrationBean<>(new DispatcherServlet(context), "/");
+        }
+
+        @Bean
+        FilterRegistrationBean<Filter> downloadPrincipalFilter() {
+            // Supply a synthetic identity only for this test's real HTTP download.
+            // Production login is outside this fixture; AccessService is still real.
+            Filter filter = (request, response, chain) -> {
+                var httpRequest = (HttpServletRequest) request;
+                var username = httpRequest.getHeader("X-Test-Download-User");
+                if (username == null || !httpRequest.getRequestURI().endsWith("/all-documents-xls")) {
+                    chain.doFilter(request, response);
+                    return;
+                }
+                chain.doFilter(new HttpServletRequestWrapper(httpRequest) {
+                    @Override
+                    public Principal getUserPrincipal() {
+                        return username == null ? null : () -> username;
+                    }
+                }, response);
+            };
+            var registration = new FilterRegistrationBean<>(filter);
+            registration.addUrlPatterns("/admin/api/events/*");
+            registration.setMatchAfter(true);
+            return registration;
+        }
+    }
 
     private Event event;
     private String username;
@@ -178,7 +233,7 @@ class BillingDocumentCreationIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void cancelReservationGeneratesCreditNote() {
+    void cancelReservationGeneratesCreditNote() throws Exception {
         var reservationId = createReservation(form -> {
             form.setInvoiceRequested(true);
             form.setVatCountryCode("CH");
@@ -195,6 +250,9 @@ class BillingDocumentCreationIntegrationTest extends BaseIntegrationTest {
         assertTrue(billingDocuments.stream().allMatch(bd -> bd.getStatus() == BillingDocument.Status.VALID));
 
         assertEquals(BillingDocument.Type.CREDIT_NOTE, billingDocuments.getFirst().getType());
+        var rows = download("credit-note");
+        assertEquals(4, rows.size());
+        assertTrue(rows.subList(1, rows.size()).stream().allMatch(row -> row.get(11).equals("CREDIT_NOTE_ISSUED")));
     }
 
     @Test
@@ -247,6 +305,77 @@ class BillingDocumentCreationIntegrationTest extends BaseIntegrationTest {
         assertEquals(2, billingDocumentRepository.findByIdsAndEvent(billingDocuments.stream().map(BillingDocument::getId).collect(Collectors.toList()), event.getId()).size());
 
         assertEquals(BillingDocument.Type.CREDIT_NOTE, billingDocuments.getFirst().getType());
+    }
+
+    @Test
+    void downloadsDocumentsWithCurrentStatusAndEventConfirmationDate() throws Exception {
+        var reservationId = createReservation(form -> {
+            form.setInvoiceRequested(true);
+            form.setVatCountryCode("CH");
+            form.setBillingAddressLine1("LINE 1");
+            form.setBillingAddressCity("CITY");
+            form.setBillingAddressZip("ZIP");
+        });
+        var pending = download("pending");
+        assertEquals(2, pending.size());
+        assertEquals("OFFLINE_PAYMENT", pending.get(1).get(11));
+        assertEquals("", pending.get(1).get(12));
+
+        confirmPaymentForReservation(reservationId);
+        var timestamp = ZonedDateTime.parse("2026-10-12T23:30:00Z");
+        assertEquals(1, jdbcTemplate.update("update tickets_reservation set confirmation_ts = :timestamp where id = :id",
+            Map.of("timestamp", timestamp.toOffsetDateTime(), "id", reservationId)));
+        var expected = timestamp.withZoneSameInstant(event.getZoneId()).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+        var completed = download("completed");
+        assertEquals(3, completed.size());
+        for (var row : completed.subList(1, completed.size())) {
+            assertEquals(reservationId, row.getFirst());
+            assertEquals("COMPLETE", row.get(11));
+            assertEquals(expected, row.get(12));
+            assertNotEquals(row.get(10), row.get(12));
+        }
+
+        adminReservationManager.removeReservation(PurchaseContext.PurchaseContextType.event,
+            event.getShortName(), reservationId, false, false, false, username);
+        var cancelled = download("cancelled");
+        var status = jdbcTemplate.queryForObject("select status from tickets_reservation where id = :id", Map.of("id", reservationId), String.class);
+        assertEquals("CANCELLED", status);
+        assertEquals(ticketReservationManager.countBillingDocuments(event.getId()) + 1, cancelled.size());
+        assertEquals(3, cancelled.size());
+        assertFalse(cancelled.subList(1, cancelled.size()).stream().anyMatch(row -> row.get(1).equals("CREDIT_NOTE")));
+        for (var row : cancelled.subList(1, cancelled.size())) {
+            assertEquals(status, row.get(11));
+            assertEquals(expected, row.get(12));
+        }
+        var denied = requestDownload("not-an-event-owner");
+        assertTrue(denied.statusCode() >= 400);
+        assertEquals("Access to resource has been denied", new String(denied.body(), java.nio.charset.StandardCharsets.UTF_8));
+        assertFalse(denied.headers().firstValue("Content-Disposition").isPresent());
+    }
+
+    private HttpResponse<byte[]> requestDownload(String identity) throws Exception {
+        var request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/admin/api/events/"
+            + event.getShortName() + "/all-documents-xls"))
+            .header("X-Test-Download-User", identity).GET().build();
+        return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofByteArray());
+    }
+
+    private List<List<String>> download(String stage) throws Exception {
+        var response = requestDownload(owner(username));
+        assertEquals(200, response.statusCode());
+        assertEquals("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            response.headers().firstValue("Content-Type").orElseThrow());
+        assertEquals("attachment; filename=" + event.getShortName() + "-billing-documents.xlsx",
+            response.headers().firstValue("Content-Disposition").orElseThrow());
+        var rows = XlsxTestUtil.rows(response.body());
+        assertEquals(List.of("STATUS", "CONFIRMATION_DATE"), rows.getFirst().subList(11, 13));
+        var artifactDirectory = System.getProperty("billing.download.artifacts");
+        if (artifactDirectory != null) {
+            var directory = Path.of(artifactDirectory);
+            Files.createDirectories(directory);
+            Files.write(directory.resolve(stage + ".xlsx"), response.body());
+        }
+        return rows;
     }
 
     private String createReservation(Consumer<ContactAndTicketsForm> formCustomizer) {

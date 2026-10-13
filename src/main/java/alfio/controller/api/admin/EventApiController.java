@@ -796,6 +796,8 @@ public class EventApiController {
         header.add("Currency");
         header.add(PAYMENT_METHOD);
         header.add("Generated on");
+        header.add("STATUS");
+        header.add("CONFIRMATION_DATE");
 
         ExportUtils.exportExcel(event.getShortName() + "-billing-documents.xlsx", "Documents", header.toArray(String[]::new),
             ticketReservationManager.streamAllDocumentsFor(event.getId())
@@ -825,6 +827,10 @@ public class EventApiController {
                         fields.add(reservation.getCurrencyCode());
                         fields.add(Objects.requireNonNullElse(reservation.getPaymentMethod(), PaymentProxy.NONE).name());
                         fields.add(bd.getGenerationTimestamp().withZoneSameInstant(event.getZoneId()).format(formatter));
+                        fields.add(reservation.getStatus().name());
+                        fields.add(Optional.ofNullable(reservation.getConfirmationTimestamp())
+                            .map(timestamp -> timestamp.withZoneSameInstant(event.getZoneId()).format(formatter))
+                            .orElse(""));
                         return fields.toArray(String[]::new);
                     });
                 })
