@@ -92,3 +92,50 @@
 | `ai/local-state/issue29-downloads/regression/completed.xlsx` | 3036 | `0788c56d4ce2903a86b54e6ab761184770735e8eb3983af26785be818be67d7f` |
 | `ai/local-state/issue29-downloads/regression/credit-note.xlsx` | 3108 | `683d33a2492425cb72e41040dd4a7851f7ff27f8fef0cbebe3dc1b968fd2a8b7` |
 | `ai/local-state/issue29-downloads/regression/pending.xlsx` | 2965 | `a36833c2ac530c8ea0cffcdec531930408e191385fa139f41d0a1037fabaa644` |
+
+
+## PR #30 CI 실패 수정
+
+- 요청: CI 문제를 수정·검증 후 커밋. 시작 2026-10-13 16:03:47 KST(07:03:47 UTC), 브랜치 fix/29-billing-document-access, HEAD72908ef2d, 작업 트리 깨끗함. 기존 취소된 문서 커밋은 복원하지 않는다.
+- 실패 원인 확정: 새 E2E의 Jackson2 ObjectMapper 호출이 build.gradle.kts 금지 API 규칙을 위반. [제품 CI](https://github.com/WookJaes/alf.io/actions/runs/38359046782)와 [CodeQL 빌드](https://github.com/WookJaes/alf.io/actions/runs/38359046915) 모두 :forbiddenApisTest 실패. 원격 E2E3건/마이그레이션/Linux·Windows 하네스는 통과. 이전 로컬 test/E2E 검증에 금지 API 검사가 누락됐으며 독립 리뷰도 발견하지 못했다. 이전50건 통과 사실과 전체 CI 실패를 구분한다.
+- 수정 전 로컬 재현: `./gradlew forbiddenApisTest --console=plain --no-daemon --no-build-cache --rerun-tasks`, exit1, 실제215클래스 스캔/금지 호출2오류, BillingDocumentDownloadE2ETest.java:114에서 동일 ObjectMapper 오류. Gradle10초·8작업 실제 실행. 제품 테스트 실행이 아닌 정적 API 검사이며 오류2건을 테스트 실패2건으로 계산하지 않는다.
+- 수정: 기존 alfio.util.Json.fromJson(denialBody,String.class) 사용. 거절 본문 전체 비교/403/데이터·파일 미노출 조건 유지. 제품 코드·기존 기대값·조회·권한·CI설정·의존성·DB스키마 변경 없음.
+- 검증 계획: forbiddenApisMain/Test 실제 실행, 관련회귀47건과 기존 로그인E2E전체3건, 문서 검사 및 자체QA/Review. 하네스 issue29-ci-fix, 새 XML/실물 경로와 결과 시각·건수 연결. PR 본문 수정·외부댓글·push는 이번 요청 범위에 포함하지 않는다.
+
+- 환경/도구 사건: forbidden 명령 자동 권한 검토가 시간초과하여 실행 전 거부됨→허용된1회 재시도 성공. 최초 issue29-ci-fix forbidden exit0(07:07:46.318873–07:07:55.848655 UTC), 이후 regression exit1, XML47건/실패8/오류0/스킵0. 단위25·Manager14는 성공, 통합8건은 Docker 환경 초기화 실패. /var/run/docker.sock 없음·DockerDesktop provider 소켓탐색null이 원인이고 Docker CLI 서버29.5.2는 정상 응답. 성공으로 표시하지 않는다.
+- 환경 보완: Git 제외 ci-fix-reports.gradle에서 이번 Test 프로세스에만 실제 Docker 소켓 `unix:///Users/jeong/.docker/run/docker.sock` 지정. 기존 검증 설정은 보존, 제품/CI설정 변경 없음. 새 선언/실행 ID issue29-ci-fix-final·새 XML/실물 범위에서 모든 필수 항목 재검증한다. 소켓 재탐색 문제는 환경 실패이며 금지API 수정과 구분한다.
+
+- 재검증 issue29-ci-fix-final: forbidden exit0, regression 자체 exit0/47건·실패0·오류0·스킵0이나 하네스 :test AMBIGUOUS(동일 작업 로그 중복)로 failed. Docker 초기화 문제는 해결됐으나 게이트 통과로 표시하지 않는다. 하네스 규칙은 수정하지 않고 상세 표준출력 -Pverbose만 제거한 새 실행 issue29-ci-fix-verified/새 XML 범위에서 재검증한다. 테스트 assertion·실행대상·보고서 수집 범위는 유지한다.
+
+### CI 수정 최종 검증·리뷰 결과
+
+- 최종 실행 ID `issue29-ci-fix-verified`, 선언 `ai/local-state/issue29-config/ci-fix-verified-plan.json`. 대상은 HEAD72908ef2d+E2E의Jackson3유틸교체 diff이며 이전 영수증 재사용이 아니다.
+
+| 필수 항목 | 실제 실행 구간(2026-10-13) | 종료 코드·결과 |
+|---|---|---|
+| forbidden | 16:12:49.641784 KST–16:12:59.613532 KST | exit0 · 실제 명령 통과 |
+| regression | 16:12:59.889279 KST–16:13:19.646934 KST | exit0 · 실제47건/실패0/오류0/스킵0 · :test EXECUTED |
+| e2e | 16:13:20.095354 KST–16:14:00.049522 KST | exit0 · 실제3건/실패0/오류0/스킵0 · :e2eValidation EXECUTED |
+| structure | 16:15:25.773227 KST–16:15:25.801224 KST | exit0 · 실제 명령 통과 |
+
+최종 실제 명령(저장소 루트, 하네스 run):
+
+```sh
+./gradlew forbiddenApisMain forbiddenApisTest --console=plain --no-daemon --no-build-cache --rerun-tasks
+```
+
+```sh
+./gradlew test --tests alfio.controller.api.admin.EventApiControllerDocumentsTest --tests alfio.controller.api.v2.user.reservation.BillingDocumentCreationIntegrationTest --tests alfio.manager.BillingDocumentManagerTest --console=plain --no-daemon --no-build-cache -I ai/local-state/issue29-config/ci-fix-reports.gradle -Dharness.reports=ai/local-state/issue29-ci-fix-verified-xml -Dpgsql.version=15 -Duser.timezone=Asia/Seoul --rerun-tasks -Dbilling.download.artifacts=ai/local-state/issue29-ci-fix-verified-downloads/regression
+```
+
+```sh
+./gradlew e2eValidation --console=plain --no-daemon --no-build-cache -I ai/local-state/issue29-config/ci-fix-reports.gradle -Dharness.reports=ai/local-state/issue29-ci-fix-verified-xml -Dpgsql.version=15 -Duser.timezone=Asia/Seoul -Dbilling.e2e.artifacts=ai/local-state/issue29-ci-fix-verified-downloads/e2e
+```
+
+- 금지 API 검사는 Main/Test 모두 --rerun-tasks로 실제 수행했고 exit0. 정적 검사이며 테스트 건수에 합산하지 않는다. 기존 하네스의 캐시/미실행 거부 조건을 유지했다.
+- 회귀47건(단위25/통합8/Manager14)과 기존E2E전체3건, 새XML6개 전체·체크섬을 영수증과 대조했다. 실제로그인 소유자메뉴 HTTP200/XLSX13열3행, 비소유자admin API200→대상403/거절본문전체/attachment·문서·파일미노출 통과. E2E 기대값·검증 조건을 바꾸지 않았다.
+- 새 합성 XLSX5파일/11데이터행 ZIP/XML 확인. pending빈확정일·CANCELLED/COMPLETE서울연도경계·통합실제취소/creditnote 값 유지. 이번 생성 앱/컨테이너/Chrome/임시다운로드만 close/quit/finally정리했고 근거실물/영수증은Git제외경로에 보존.
+- 자체QA/Review begin→확인→record, 차단발견0. 마지막 forbidden/regression/e2e/structure/qa/review 모두passed, gate/resume 각exit0. 새 하네스코드/의존성/제품API/DB마이그레이션 변경없음. 기존 금지API 누락을 이번 선언에 보완한 것이 하네스 기여이며 초기Docker실패·중복작업판정도 완료로 통과시키지 않았다.
+- 필수검증·자체리뷰·gate/resume 실제종료 **2026-10-13 16:15:26 KST(07:15:26 UTC)**. 이번 요청 시작16:03:47부터 **699초=11분39초**(로컬재현·자동권한검토대기/시간초과·Docker환경조사·하네스재시도 포함 벽시계). 순수AI대기·사람직접검토/수정·정밀대기시간은미측정. 개인사정중단관측없음, 원격CI재실행없음. 최초819초에 합산하지 않는다. 이 시각 이후 기록정리·스테이징·커밋은 후처리로 분리한다.
+- 미실행: 수정 후 원격CI/CodeQL분석·전체제품suite/전체distribution빌드·다른OS/Excel앱. CI의확인된실패원인은로컬금지API검사로재현·해결했으나 원격CI전체통과로 주장하지 않는다.
+- 요청 범위2파일(E2E수정/이MD)을 하나의 수정 커밋으로 저장한다. 기록확인·문서구조·공백·스테이징diff 검사 후 커밋하며 HEAD변경후위결과를새HEAD재실행으로표시하지않는다. push/PR본문수정/외부댓글/병합미실행.

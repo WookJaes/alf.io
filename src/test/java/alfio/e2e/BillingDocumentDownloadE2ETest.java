@@ -17,6 +17,7 @@
 package alfio.e2e;
 
 import alfio.test.util.XlsxTestUtil;
+import alfio.util.Json;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -111,7 +112,7 @@ class BillingDocumentDownloadE2ETest {
                 assertEquals(403, denied.statusCode());
                 var denialBody = new String(denied.body(), StandardCharsets.UTF_8);
                 assertEquals("Access to resource has been denied", denialBody.startsWith("\"")
-                    ? new com.fasterxml.jackson.databind.ObjectMapper().readValue(denialBody, String.class) : denialBody);
+                    ? Json.fromJson(denialBody, String.class) : denialBody);
                 assertTrue(denied.headers().firstValue("Content-Disposition").isEmpty());
                 assertFalse(denied.headers().firstValue("Content-Type").orElse("").contains("spreadsheet"));
                 driver.get(endpoint);
