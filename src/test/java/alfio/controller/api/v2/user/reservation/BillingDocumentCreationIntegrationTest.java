@@ -348,7 +348,7 @@ class BillingDocumentCreationIntegrationTest extends BaseIntegrationTest {
             assertEquals(expected, row.get(12));
         }
         var denied = requestDownload("not-an-event-owner");
-        assertTrue(denied.statusCode() >= 400);
+        assertEquals(403, denied.statusCode());
         assertEquals("Access to resource has been denied", new String(denied.body(), java.nio.charset.StandardCharsets.UTF_8));
         assertFalse(denied.headers().firstValue("Content-Disposition").isPresent());
     }
