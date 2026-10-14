@@ -58,7 +58,7 @@ public class OpenAiDraftClient {
             var request = HttpRequest.newBuilder(endpoint).timeout(timeout)
                 .header("Authorization", "Bearer " + settings.apiKey()).header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(Json.toJson(payload(selected)), StandardCharsets.UTF_8)).build();
-            var response = client.send(request, info -> new LimitedBody());
+            var response = sendWithinDeadline(request, start);
             if (response.statusCode() == 429) throw error(HttpStatus.TOO_MANY_REQUESTS, "AI_RATE_LIMIT");
             if (response.statusCode() != 200) throw error(HttpStatus.BAD_GATEWAY, "AI_FAILED");
             JsonNode root = Json.OBJECT_MAPPER.readTree(response.body());
@@ -86,6 +86,31 @@ public class OpenAiDraftClient {
         } catch (ReconciliationException e) { throw e; }
         catch (IOException ignored) { throw error(HttpStatus.BAD_GATEWAY, "AI_FAILED"); }
         catch (RuntimeException ignored) { throw invalid(); }
+    }
+
+    private HttpResponse<byte[]> sendWithinDeadline(HttpRequest request, long start) throws IOException, InterruptedException {
+        if (System.nanoTime() - start >= timeout.toNanos()) throw new HttpTimeoutException("AI deadline exceeded");
+        var body = new LimitedBody();
+        var pending = client.sendAsync(request, info -> body);
+        try {
+            long remaining = timeout.toNanos() - (System.nanoTime() - start);
+            if (remaining <= 0) throw new TimeoutException();
+            return pending.get(remaining, TimeUnit.NANOSECONDS);
+        } catch (TimeoutException ignored) {
+            pending.cancel(true);
+            body.cancel();
+            throw new HttpTimeoutException("AI deadline exceeded");
+        } catch (InterruptedException e) {
+            pending.cancel(true);
+            body.cancel();
+            throw e;
+        } catch (ExecutionException e) {
+            pending.cancel(true);
+            body.cancel();
+            if (e.getCause() instanceof IOException io) throw io;
+            if (e.getCause() instanceof RuntimeException runtime) throw runtime;
+            throw new IOException("AI request failed", e.getCause());
+        }
     }
 
     Map<String, Object> payload(List<Item> items) {
@@ -168,9 +193,20 @@ public class OpenAiDraftClient {
         private final CompletableFuture<byte[]> result = new CompletableFuture<>();
         private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         private Flow.Subscription subscription;
+        private boolean cancelled;
         public CompletionStage<byte[]> getBody() { return result; }
-        public void onSubscribe(Flow.Subscription subscription) { this.subscription = subscription; subscription.request(1); }
-        public void onNext(List<ByteBuffer> buffers) {
+        public synchronized void onSubscribe(Flow.Subscription subscription) {
+            if (cancelled) { subscription.cancel(); return; }
+            this.subscription = subscription;
+            subscription.request(1);
+        }
+        synchronized void cancel() {
+            cancelled = true;
+            if (subscription != null) subscription.cancel();
+            result.cancel(false);
+        }
+        public synchronized void onNext(List<ByteBuffer> buffers) {
+            if (cancelled || result.isDone()) return;
             for (ByteBuffer buffer : buffers) {
                 if (bytes.size() + buffer.remaining() > 64 * 1024) {
                     subscription.cancel(); result.completeExceptionally(new IOException("Response limit exceeded")); return;
@@ -179,7 +215,7 @@ public class OpenAiDraftClient {
             }
             subscription.request(1);
         }
-        public void onError(Throwable error) { result.completeExceptionally(error); }
-        public void onComplete() { result.complete(bytes.toByteArray()); }
+        public synchronized void onError(Throwable error) { result.completeExceptionally(error); }
+        public synchronized void onComplete() { result.complete(bytes.toByteArray()); }
     }
 }

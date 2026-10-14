@@ -62,7 +62,17 @@ class AttendeeReconciliationE2ETest {
             String result=Json.toJson(Map.of("status","completed","output",List.of(Map.of("type","message","content",List.of(Map.of("type","output_text","text",Json.toJson(Map.of("entries",choices)))))),
                 "usage",Map.of("input_tokens",120,"output_tokens",60,"input_tokens_details",Map.of("cached_tokens",0))));
             byte[] bytes=(current==1?"synthetic upstream error":result).getBytes(StandardCharsets.UTF_8);
-            try { exchange.sendResponseHeaders(current==1?500:200,bytes.length); exchange.getResponseBody().write(bytes); }
+            try {
+                exchange.sendResponseHeaders(current==1?500:200,bytes.length);
+                if (current==4) {
+                    exchange.getResponseBody().write(bytes,0,1);
+                    exchange.getResponseBody().flush();
+                    try { Thread.sleep(3500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                    exchange.getResponseBody().write(bytes,1,bytes.length-1);
+                } else {
+                    exchange.getResponseBody().write(bytes);
+                }
+            }
             catch (java.io.IOException ignored) { /* Expected broken connection in the timeout test. */ }
             finally { exchange.close(); }
         }); mock.start();
@@ -110,14 +120,19 @@ class AttendeeReconciliationE2ETest {
                 String id=databaseId(environment);
                 assertEncrypted(environment);
                 String endpoint="/admin/api/events/"+slug+"/attendee-reconciliations";
-                for (int failure:List.of(1,2,3)) {
+                for (int failure:List.of(1,2,3,4)) {
                     mode.set(failure); click(driver,"#generate");
                     wait.until(d->shadow(driver,".error")!=null);
                     String error=shadow(driver,".error").getText();
-                    assertTrue(error.contains(failure==1?"AI 연결에 실패":failure==2?"AI 응답 시간이 초과":"근거 검증"),error);
+                    assertTrue(error.contains(failure==1?"AI 연결에 실패":failure==2 || failure==4?"AI 응답 시간이 초과":"근거 검증"),error);
                     assertNotNull(shadow(driver,"#summary")); assertEquals(200,status(driver,endpoint+"/"+id));
+                    try (var connection=environment.connection(); var query=connection.prepareStatement("select ai_locked_until from attendee_reconciliation where id=?")) {
+                        query.setString(1,id);
+                        try (var rows=query.executeQuery()) { assertTrue(rows.next()); assertNull(rows.getObject(1)); }
+                    }
                 }
                 mode.set(0);
+                click(driver,"#generate"); wait.until(d->shadow(driver,"#drafts")!=null);
                 driver.navigate().refresh(); wait.until(d->shadow(driver,"#history")!=null);
                 shadow(driver,"#history").findElements(By.tagName("option")).get(1).click();
                 wait.until(d->shadow(driver,"#summary")!=null); assertTrue(shadow(driver,"#summary").getText().contains("확인 필요 3개"));
@@ -143,7 +158,7 @@ class AttendeeReconciliationE2ETest {
                 }
                 assertEquals(403,status(driver,endpoint+"/"+id));
                 environment.assertNoDataMigrationFailure();
-                System.out.println("Attendee E2E: actual owner/admin/outsider logins; 1 matched/3 attention; all finding types; encrypted DB reopen; edited clipboard; AI500/timeout/invalid preserves result; missing columns; current membership revocation; real model/cost/manual evaluation NOT performed");
+                System.out.println("Attendee E2E: actual owner/admin/outsider logins; 1 matched/3 attention; all finding types; encrypted DB reopen; edited clipboard; AI500/header timeout/body timeout/invalid preserves result; DB lease released and retry succeeds; missing columns; current membership revocation; real model/cost/manual evaluation NOT performed");
             } catch (Exception | AssertionError error) {
                 Files.createDirectories(Path.of("build", "validation"));
                 Files.writeString(Path.of("build", "validation", "attendee-failure.html"), driver.getPageSource()
