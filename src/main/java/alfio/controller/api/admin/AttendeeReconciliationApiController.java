@@ -44,7 +44,7 @@ public class AttendeeReconciliationApiController {
         response.setHeader("Cache-Control", "no-store");
     }
     @PostMapping(consumes = "text/csv")
-    public Header compare(@PathVariable String eventName, HttpServletRequest request, Principal principal) {
+    public Header compareAttendeeLists(@PathVariable String eventName, HttpServletRequest request, Principal principal) {
         var event = access.checkEventOwnership(principal, eventName);
         if (request.getContentLengthLong() > AttendeeCsvParser.MAX_BYTES) throw tooLarge();
         try {
@@ -56,17 +56,17 @@ public class AttendeeReconciliationApiController {
         }
     }
     @GetMapping
-    public List<Header> list(@PathVariable String eventName, Principal principal) {
+    public List<Header> listAttendeeReconciliations(@PathVariable String eventName, Principal principal) {
         return manager.list(access.checkEventOwnership(principal, eventName).getId(), principal.getName());
     }
     @GetMapping("/{id}")
-    public Page page(@PathVariable String eventName, @PathVariable String id, Principal principal,
+    public Page getAttendeeReconciliation(@PathVariable String eventName, @PathVariable String id, Principal principal,
                      @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "50") int pageSize,
                      @RequestParam(defaultValue = "ATTENTION") String filter) {
         return manager.page(id, access.checkEventOwnership(principal, eventName).getId(), principal.getName(), page, pageSize, filter);
     }
     @PostMapping("/{id}/drafts")
-    public Draft draft(@PathVariable String eventName, @PathVariable String id, Principal principal, HttpServletRequest request) {
+    public Draft generateAttendeeReconciliationDrafts(@PathVariable String eventName, @PathVariable String id, Principal principal, HttpServletRequest request) {
         var event = access.checkEventOwnership(principal, eventName);
         DraftRequest selection;
         try {
@@ -79,7 +79,7 @@ public class AttendeeReconciliationApiController {
         return manager.draft(id, event.getId(), principal.getName(), selection);
     }
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable String eventName, @PathVariable String id, Principal principal) {
+    public ResponseEntity<Void> deleteAttendeeReconciliation(@PathVariable String eventName, @PathVariable String id, Principal principal) {
         manager.delete(id, access.checkEventOwnership(principal, eventName).getId(), principal.getName());
         return ResponseEntity.noContent().build();
     }
