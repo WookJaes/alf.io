@@ -53,6 +53,13 @@ public final class ValidationEnvironment implements AutoCloseable {
     }
 
     public String startApp(Path jar) throws Exception {
+        return startApp(jar, java.util.Map.of());
+    }
+
+    public String startApp(Path jar, java.util.Map<String, String> validationEnvironment) throws Exception {
+        if (validationEnvironment.keySet().stream().anyMatch(k -> !k.startsWith("ALFIO_ATTENDEEASSISTANT_"))) {
+            throw new IllegalArgumentException("Only attendee-assistant validation configuration is allowed");
+        }
         if (app != null) {
             throw new IllegalStateException("Stop the previous app before upgrading");
         }
@@ -84,6 +91,7 @@ public final class ValidationEnvironment implements AutoCloseable {
                 builder.environment().put(key, System.getenv(key));
             }
         }
+        builder.environment().putAll(validationEnvironment);
         app = builder.start();
         var client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
         var request = HttpRequest.newBuilder(URI.create(baseUrl + "/healthz")).timeout(Duration.ofSeconds(3)).build();

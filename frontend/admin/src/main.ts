@@ -73,3 +73,5 @@ export { FileUpload } from './components/file-upload';
 export { PromoCode } from './event/promo-code/promo-code';
 export { ReservationsList } from './event/reservations-list/reservations-list';
 export { ComposeMessage } from './event/compose-message/compose-message';
+
+export { AttendeeReconciliation } from './event/attendee-reconciliation/attendee-reconciliation';

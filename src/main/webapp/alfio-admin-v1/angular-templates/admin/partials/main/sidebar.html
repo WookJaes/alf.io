@@ -82,6 +82,9 @@
                         <a ui-sref="events.single.donations({eventName: ctrl.event.shortName})"><i class="fa fa-gift"></i> Donation options</a>
                     </li>
                     <li role="presentation" data-ui-sref-active="active">
+                        <a data-ui-sref="events.single.attendeeReconciliation({eventName:ctrl.event.shortName})"><i class="fa fa-list-alt"></i> 명단 비교</a>
+                    </li>
+                    <li role="presentation" data-ui-sref-active="active">
                         <a data-ui-sref="events.single.reservationsList({eventName:ctrl.event.shortName})"><i class="fa fa-ticket"></i> Reservations</a>
                     </li>
                     <li role="presentation" data-ui-sref-active="active" data-ng-if="!ctrl.freeOfCharge">

@@ -157,6 +157,13 @@
                     view: 'EVENT_DETAIL'
                 }
             })
+            .state('events.single.attendeeReconciliation', {
+                url: '/attendee-reconciliation',
+                template: '<alfio-attendee-reconciliation data-event-name="{{$ctrl.loadEvent.shortName}}"></alfio-attendee-reconciliation>',
+                controller: loadEventCtrl,
+                controllerAs: '$ctrl',
+                resolve: loadEvent
+            })
             .state('events.single.dataToCollect', {
                 url:'/attendee-data-to-collect',
                 template:'<alfio-additional-field-list data-public-identifier="{{$ctrl.loadEvent.publicIdentifier}}" data-purchase-context-type="event" data-organization-id="{{$ctrl.loadEvent.organizationId}}"></alfio-additional-field-list>',
