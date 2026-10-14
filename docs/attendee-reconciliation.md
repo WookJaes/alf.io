@@ -20,7 +20,7 @@ CSV `ID`는 기존 참석자 내보내기의 티켓 UUID이며 `E-Mail`은 티�
 
 정상 일치, CSV에만 있음, 시스템에만 있음, CSV 중복, 이메일 불일치를 구분한다. 중복과 불일치가 같은 티켓에 함께 나타날 수 있다. 각 항목은 모든 CSV 레코드와 시스템 근거를 연결한다. 비교 시각 이후 시스템 변경은 재비교해야 한다.
 
-AI 기능은 판정을 변경하지 않고 설명·안내 초안을 생성한다. AI 공급자와 보관 정책은 사용자 선택 후 확정한다. 이메일 발송·예약 수정·취소·환불은 수행하지 않는다. 원본 명단·개인정보·API 키를 로그나 저장소에 남기지 않는다.
+AI 기능은 판정을 변경하지 않고 설명·안내 초안을 생성한다. AI 공급자는 OpenAI이며 비교 결과는 아래 정책에 따라 DB에 24시간 보관한다. 이메일 발송·예약 수정·취소·환불은 수행하지 않는다. 원본 명단·개인정보·API 키를 로그나 저장소에 남기지 않는다.
 
 ## 확정한 보관·접근 정책
 
@@ -45,6 +45,90 @@ AI 기능은 판정을 변경하지 않고 설명·안내 초안을 생성한다
 AI는 기본 비활성화되며 비교와 재조회는 독립적으로 사용할 수 있다. 신규 Flyway 마이그레이션 `V206_2.0.0.61`은 비교 결과·호출 한도 테이블과 인덱스만 추가한다. 기존 예약·티켓·결제 테이블을 변경하지 않는다. 기능이 비활성화되어 있어도 앱의 기존 마이그레이션 절차에 따라 테이블이 생성된다.
 
 테스트용 `alfio.attendee-assistant.test-endpoint`는 `dev` 프로필에서만 `http://127.0.0.1:<port>/...` 주소를 허용한다. 운영 연결은 기본 `https://api.openai.com/v1/responses`를 사용한다. 합성 키와 모의 서버는 테스트에서만 사용한다.
+
+## 로컬 설정과 실행 순서
+
+macOS의 zsh 기준이다. Java 25와 기존 로컬 PostgreSQL이 준비되어 있어야 한다. DB 준비와 기본 로그인은 [개발 실행 안내](../README.md#run-in-development-mode)를 따른다. 아래 명령은 서버 설정용이며 실제 키를 코드·문서·채팅에 붙여 넣지 않는다.
+
+### 1. 암호화 키 생성 — 최초 한 번
+
+저장소 밖 `~/.config/alfio/attendee-encryption.key`에 무작위 32바이트 키를 Base64로 저장한다. 기존 파일이 있으면 재사용하며 덮어쓰지 않는다.
+
+```zsh
+(
+  umask 077
+  mkdir -p ~/.config/alfio
+  if [[ ! -e ~/.config/alfio/attendee-encryption.key ]]; then
+    set -o noclobber
+    openssl rand -base64 32 > ~/.config/alfio/attendee-encryption.key
+  fi
+  chmod 600 ~/.config/alfio/attendee-encryption.key
+)
+```
+
+이 파일은 서버를 다시 실행할 때도 보존한다. 새 키를 매번 생성하면 이전 비교 결과를 읽지 못한다. 여러 인스턴스는 같은 키를 사용하며, 백업도 저장소 밖의 접근이 제한된 장소에서 관리한다. 기존 파일이 비어 있거나 잘못된 경우에는 원인을 확인하고 기존 결과의 복구 필요성을 판단한 뒤 조치한다.
+
+### 2. OpenAI API 키 준비
+
+[OpenAI API 키 페이지](https://platform.openai.com/api-keys)에서 사용할 프로젝트의 키를 발급한다. 키는 다음 단계의 숨김 입력 프롬프트에만 붙여 넣는다. 서버 환경 변수로 API 키를 주입하는 방법은 [공식 시작 안내](https://developers.openai.com/api/docs/quickstart)를 참고한다.
+
+### 3. 실행할 터미널에 환경 변수 설정
+
+같은 zsh 터미널에서 아래 명령을 실행한다. `read`의 프롬프트에 API 키를 붙여 넣고 Enter를 누른다. 입력한 키는 화면에 표시되지 않으며 키 값을 명령 문자열로 작성하지 않는다. `set +x`는 키 설정 중 셸의 명령 추적 출력을 끈다.
+
+```zsh
+set +x
+export ALFIO_ATTENDEEASSISTANT_ENCRYPTIONKEY="$(cat ~/.config/alfio/attendee-encryption.key)"
+
+read -rs 'ALFIO_ATTENDEEASSISTANT_OPENAIAPIKEY?OpenAI API 키 입력: '
+printf '\n'
+export ALFIO_ATTENDEEASSISTANT_OPENAIAPIKEY
+
+export ALFIO_ATTENDEEASSISTANT_AIENABLED=true
+export ALFIO_ATTENDEEASSISTANT_MODEL=gpt-5.4-mini-2026-03-17
+export ALFIO_ATTENDEEASSISTANT_TIMEOUTSECONDS=30
+```
+
+이 구현은 `OPENAI_API_KEY` 대신 `ALFIO_ATTENDEEASSISTANT_OPENAIAPIKEY`를 읽는다. 모델과 시간 제한은 기본값과 같지만 실행 조건을 명확하게 남기기 위해 명시한다. 환경 변수는 현재 터미널과 그 터미널에서 실행한 자식 프로세스에 적용된다. 새 터미널에서는 이 단계를 다시 수행하고, 이미 실행 중인 앱은 재시작한다. 키 값을 `echo`, `printenv` 또는 전체 환경 덤프로 확인하지 않는다.
+
+### 4. 앱 실행
+
+위 환경 변수를 설정한 같은 터미널에서 alf.io 저장소 루트로 이동한 뒤 실행한다.
+
+```zsh
+./gradlew -Pprofile=dev :bootRun
+```
+
+새 비교 결과 테이블은 기존 앱 시작의 Flyway 절차로 생성된다. [관리자 화면](http://localhost:8080/admin)에 로그인하고 허용된 행사의 **명단 비교** 메뉴를 연다. AI 버튼이 활성화되었다는 사실만으로 실제 공급자 연결 성공을 판단하지 않는다.
+
+### 5. 동작 확인
+
+- 개인정보가 없는 합성 명단 또는 테스트 행사에서 내보낸 `ID`, `E-Mail` CSV로 비교한다. 정상 일치·확인 필요 항목의 근거를 확인한다.
+- 확인 필요 항목을 선택하고 **설명·초안 생성**을 실행한다. 실제 모델 응답·문구 근거·입력/출력 토큰·시간을 확인하고 초안을 수정·복사한다. 실제 호출은 API 사용 요금이 발생할 수 있다.
+- 페이지를 새로고침해 저장된 비교를 다시 열 수 있는지 확인한다. 실제 모델 품질·비용과 수동 처리 대비 평가는 [평가 절차](attendee-assistant-evaluation.md)에 기록한다.
+- 암호화 설정 안내가 나오면 키 파일과 환경 변수 설정을 확인한다. AI 연결 안내·실패가 나오면 활성화 설정, API 키, 프로젝트의 모델 접근·사용 한도를 확인한다. 오류 확인을 위해 키나 명단을 로그에 출력하지 않는다.
+
+AI 없이 비교·보관·재조회부터 확인하려면 1단계의 키를 준비한 뒤 다음만 설정하고 4단계로 진행한다.
+
+```zsh
+set +x
+export ALFIO_ATTENDEEASSISTANT_ENCRYPTIONKEY="$(cat ~/.config/alfio/attendee-encryption.key)"
+export ALFIO_ATTENDEEASSISTANT_AIENABLED=false
+```
+
+앱을 종료한 뒤 현재 터미널에서 설정을 제거하려면 다음을 실행한다. 보관한 암호화 키 파일은 삭제하지 않는다.
+
+```zsh
+unset ALFIO_ATTENDEEASSISTANT_ENCRYPTIONKEY
+unset ALFIO_ATTENDEEASSISTANT_OPENAIAPIKEY
+unset ALFIO_ATTENDEEASSISTANT_AIENABLED
+unset ALFIO_ATTENDEEASSISTANT_MODEL
+unset ALFIO_ATTENDEEASSISTANT_TIMEOUTSECONDS
+```
+
+### 운영 배포
+
+로컬 파일 생성·숨김 입력 명령을 운영 시작 스크립트에 넣지 않는다. 배포 환경의 비밀 관리 기능으로 암호화 키와 API 키를 주입하고 같은 설정 이름을 사용한다. 모든 인스턴스의 암호화 키를 일치시키고, AI 활성화·모델·시간 제한은 배포 설정으로 관리한다. 실제 비밀값이 포함된 파일은 저장소에 두거나 커밋하지 않는다.
 
 ## AI가 만드는 초안
 
