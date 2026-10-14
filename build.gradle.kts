@@ -471,6 +471,9 @@ val frontendAdminBuild = tasks.register<PnpmTask>("frontendAdminBuild") {
     description = "Builds the admin (Lit/Vite) frontend."
     dependsOn(frontendAdminPnpmInstall)
     args = listOf("--prefix", "${project.projectDir}/frontend/admin", "run", "build")
+    inputs.dir("${project.projectDir}/frontend/admin/src")
+    inputs.files("frontend/admin/tsconfig.json", "frontend/admin/vite.config.js",
+        "frontend/admin/package.json", "frontend/admin/pnpm-lock.yaml")
     outputs.dir("${project.projectDir}/frontend/admin/dist")
 }
 
@@ -641,6 +644,7 @@ val e2eValidation = tasks.register<Test>("e2eValidation") {
         includeTestsMatching("alfio.e2e.NormalFlowE2ETest")
         includeTestsMatching("alfio.e2e.ValidationBrowserTest")
         includeTestsMatching("alfio.e2e.BillingDocumentDownloadE2ETest")
+        includeTestsMatching("alfio.e2e.AttendeeReconciliationE2ETest")
     }
     environment("ALFIO_RUN_E2E", "true")
     outputs.upToDateWhen { false }
