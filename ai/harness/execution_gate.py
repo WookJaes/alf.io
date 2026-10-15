@@ -74,6 +74,13 @@ def save(path, value):
         stream.flush()
         os.fsync(stream.fileno())
     os.replace(temporary, path)
+    # 파일 데이터와 교체된 디렉터리 항목의 영속화는 별개다.
+    # 이 동기화가 실패하면 호출자에게 예외를 전달해 도구 실행을 막는다.
+    directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
 
 
 def fields(value, required):

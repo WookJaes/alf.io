@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -287,6 +288,73 @@ class ExecutionTests(unittest.TestCase):
             result = self.broker.execute(request)
         self.assertEqual(result['status'], 'unknown')
         self.assertTrue(self.broker.execute(request)['replayed'])
+        self.assertEqual(self.marker.read_text(), 'started\n')
+
+    def test_journal_directory_synced_after_replace_before_actual_delivery(self):
+        request = self.publish()
+        self.grant(request)
+        calls = []
+        real_sync, real_replace, real_invoke = gate.os.fsync, gate.os.replace, gate.Broker.invoke
+        def sync(fd):
+            calls.append('fsync_directory' if stat.S_ISDIR(os.fstat(fd).st_mode) else 'fsync_file')
+            return real_sync(fd)
+        def replace(source, destination):
+            calls.append('replace')
+            return real_replace(source, destination)
+        def invoke(broker, incoming):
+            calls.append('invoke')
+            return real_invoke(broker, incoming)
+        with patch.object(gate.os, 'fsync', side_effect=sync), \
+                patch.object(gate.os, 'replace', side_effect=replace), \
+                patch.object(gate.Broker, 'invoke', new=invoke):
+            result = self.broker.execute(request)
+        self.assertEqual(result['status'], 'succeeded')
+        self.assertEqual(calls[:7], ['fsync_file', 'replace', 'fsync_directory', 'invoke',
+                                    'fsync_file', 'replace', 'fsync_directory'])
+        self.assertEqual(self.marker.read_text(), 'started\n')
+        self.assertEqual(gate.load(self.directory / 'journal.json')[request['id']]['result']['status'], 'succeeded')
+
+    def test_intent_directory_sync_failure_starts_no_file_or_publisher(self):
+        publisher = self.publish('directory-failure-publish')
+        self.grant(publisher)
+        requests = [self.request(request_id='directory-failure-write'), publisher]
+        original = (self.root / 'allowed/file.txt').read_bytes()
+        real_sync = gate.os.fsync
+        descriptors = []
+        def fail_directory(fd):
+            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                descriptors.append(fd)
+                raise OSError('synthetic directory sync failure')
+            return real_sync(fd)
+        for request in requests:
+            with self.subTest(tool=request['tool']), patch.object(gate.os, 'fsync', side_effect=fail_directory):
+                result = self.assert_blocked(request)
+                self.assertEqual(result['status'], 'not_started')
+            self.assertEqual((self.root / 'allowed/file.txt').read_bytes(), original)
+            self.assertFalse(self.marker.exists())
+        self.assertEqual(len(descriptors), 2)
+        for fd in descriptors:
+            with self.assertRaises(OSError):
+                os.fstat(fd)  # 예외가 나도 디렉터리 FD를 닫는다.
+
+    def test_result_directory_sync_failure_returns_unknown_without_redelivery(self):
+        request = self.publish()
+        self.grant(request)
+        real_sync = gate.os.fsync
+        synchronized = []
+        def fail_result_directory(fd):
+            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                synchronized.append('directory')
+                if len(synchronized) == 2:
+                    raise OSError('synthetic result directory sync failure')
+            return real_sync(fd)
+        with patch.object(gate.os, 'fsync', side_effect=fail_result_directory):
+            result = self.broker.execute(request)
+        self.assertEqual(result['status'], 'unknown')
+        self.assertEqual(result['rule'], 'delivery_uncertain_do_not_retry')
+        self.assertEqual(len(synchronized), 2)
+        with patch.object(gate.Broker, 'invoke', side_effect=AssertionError('중복 전달 금지')):
+            self.assertTrue(self.broker.execute(request)['replayed'])
         self.assertEqual(self.marker.read_text(), 'started\n')
 
     def commit_request(self):
