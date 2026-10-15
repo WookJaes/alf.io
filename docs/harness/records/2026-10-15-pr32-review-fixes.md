@@ -61,3 +61,11 @@
 - `ai/tests/check.py` 및 `git diff --check` 종료0. 제품 소스·DB schema·의존성·운영 설정 변경 없음. 원본CSV/XML/로그/로컬launcher/런타임은 커밋하지 않는다. 이전 원본 12회 성능 수치는 역사적 측정으로 유지한다.
 - OOM으로 중단된 실행의 소유 앱·DB·브라우저 종료를 확인했다. 소유 임시 DB 폴더 하나의 삭제는 도구 자동 승인 정책에 의해 차단되었으며 구체적 사유는 제공되지 않았다. 우회 삭제하지 않고 정지된 폴더를 보존했다. 다른 사용자 앱·DB는 건드리지 않았다.
 - GitHub 작업은 사용자 요청 범위의 커밋·기존PR푸시·기존지적답글·Resolve만 진행한다. PR 본문·병합·배포·Docker/WSL·BIOS·재부팅은 변경하지 않는다. 수정 커밋과 상세 검증 근거는 기존 리뷰 답글에서 연결한다. 새 원격CI는 이 커밋의 실제 상태로 따로 확인한다.
+
+## 원격 CI 라이선스 실패 후속 수정
+
+- 사용자 실패 제보 뒤 `d03da2bce`의 원격 결과를 확인했다. build의 PostgreSQL16 작업과 CodeQL 빌드가 새 `ValidationPostgresTest.java`의 `licenseTest` strict header 검사에서 실패했다. PostgreSQL15/17 작업 로그에는 다른 행렬 작업 실패에 따른 operation canceled가 기록되어 있었다. E2E·migration·Linux/Windows harness는 통과했다. 로컬 동작 회귀 통과를 원격 전체 CI 통과로 표시하지 않는다.
+- 원인: 저장소 `config/HEADER`는 문장 뒤 공백 2칸을 요구한다. 신규 파일의 `PURPOSE. See`와 `alf.io. If`가 각각 공백 1칸이었다. 해당 두 공백만 기존 양식과 동일하게 맞췄다. 테스트 로직과 제품 동작은 변경하지 않았다.
+- 로컬 첫 license 실행은 PC native memory allocation 실패로 Gradle daemon이 종료됐다(종료1). 진단 사본은 ignored build 경로에 보존했다. Gradle 실행기 heap256m/metaspace192m/codecache32m/TieredStopAtLevel1/ActiveProcessorCount2로 낮춰 재실행했다. 제품·앱·DB 설정은 바꾸지 않았다.
+- `gradlew.bat licenseMain licenseTest --console=plain --no-daemon --max-workers=1 -Dorg.gradle.jvmargs="-Xmx256m -XX:MaxMetaspaceSize=192m -XX:ReservedCodeCacheSize=32m -XX:TieredStopAtLevel=1 -XX:ActiveProcessorCount=2" --rerun-tasks --info` 종료0. 플러그인은 성공 시 task를 UP-TO-DATE로 표기하지만 info에서 두 task가 `Executed with --rerun-tasks`로 강제 검사되고 `Header OK`를 출력한 사실을 확인했다. 캐시만 읽고 검사했다고 주장한 것이 아니다.
+- 기존 예약·PG 회귀는 주석 공백만 바뀌었으므로 반복하지 않는다. 원격 CI는 이 수정 커밋에서 새로 실행하며 실제 완료 결과를 별도로 확인한다. PR 본문은 보존하고 기존 리뷰 답글에서 후속 근거를 남긴다.
