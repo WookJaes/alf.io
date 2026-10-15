@@ -16,8 +16,6 @@
  */
 package alfio.e2e;
 
-import org.testcontainers.postgresql.PostgreSQLContainer;
-
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.URI;
@@ -35,18 +33,17 @@ import java.util.concurrent.TimeUnit;
 /** Owns only this run's database, application processes and temporary files. */
 public final class ValidationEnvironment implements AutoCloseable {
     public static final String POSTGRES_IMAGE = "postgres:16.13";
-    private final PostgreSQLContainer postgres = new PostgreSQLContainer(POSTGRES_IMAGE)
-        .withDatabaseName("alfio_validation").withInitScript("init-db-user.sql");
+    private final ValidationPostgres postgres = new ValidationPostgres();
     private final Path temporaryDirectory;
     private Process app;
     private String baseUrl;
     private Path appLog;
 
-    public ValidationEnvironment() throws IOException {
+    public ValidationEnvironment() throws Exception {
         temporaryDirectory = Files.createTempDirectory("alfio-validation-");
         try {
-            postgres.start();
-        } catch (RuntimeException e) {
+            postgres.start(temporaryDirectory);
+        } catch (Exception e) {
             close();
             throw e;
         }
@@ -86,7 +83,7 @@ public final class ValidationEnvironment implements AutoCloseable {
         builder.directory(temporaryDirectory.toFile());
         // Isolate local Spring configuration files and external provider/database credentials.
         builder.environment().clear();
-        for (var key : java.util.List.of("PATH", "HOME", "TMPDIR", "LANG", "TZ")) {
+        for (var key : java.util.List.of("PATH", "HOME", "TMPDIR", "LANG", "TZ", "SystemRoot", "TEMP", "TMP")) {
             if (System.getenv(key) != null) {
                 builder.environment().put(key, System.getenv(key));
             }
@@ -99,7 +96,9 @@ public final class ValidationEnvironment implements AutoCloseable {
         while (System.nanoTime() < deadline && app.isAlive()) {
             try {
                 if (client.send(request, HttpResponse.BodyHandlers.discarding()).statusCode() == 200) {
-                    System.out.println("Validation app: " + jar.getFileName() + ", PostgreSQL: " + POSTGRES_IMAGE);
+                    try (var connection = connection()) {
+                        System.out.println("Validation app: " + jar.getFileName() + ", PostgreSQL: " + connection.getMetaData().getDatabaseProductVersion());
+                    }
                     return baseUrl;
                 }
             } catch (IOException ignored) {
@@ -151,6 +150,10 @@ public final class ValidationEnvironment implements AutoCloseable {
         return baseUrl;
     }
 
+    public double applicationCpuSeconds() {
+        return app.info().totalCpuDuration().map(d -> d.toNanos() / 1_000_000_000.0).orElse(Double.NaN);
+    }
+
     public void stopApp() throws InterruptedException {
         if (app != null) {
             app.destroy();
@@ -175,16 +178,13 @@ public final class ValidationEnvironment implements AutoCloseable {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted during cleanup", e);
         } finally {
-            try {
-                postgres.stop();
-            } finally {
-                try (var files = Files.walk(temporaryDirectory)) {
-                    for (var file : files.sorted(Comparator.reverseOrder()).toList()) {
-                        Files.deleteIfExists(file);
-                    }
-                } catch (IOException e) {
-                    throw new IllegalStateException("Temporary files could not be removed", e);
+            postgres.close(); // Preserve the owned data directory if the server fails to stop.
+            try (var files = Files.walk(temporaryDirectory)) {
+                for (var file : files.sorted(Comparator.reverseOrder()).toList()) {
+                    Files.deleteIfExists(file);
                 }
+            } catch (IOException e) {
+                throw new IllegalStateException("Temporary files could not be removed", e);
             }
         }
     }
