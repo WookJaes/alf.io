@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "task_id": "issue-33-example",
+  "run_id": "issue-33-example",
+  "root": "/absolute/development/repository",
+  "repository": "WookJaes/alf.io",
+  "allowed_paths": ["src", "frontend", "docs"],
+  "protected_paths": ["docs/harness"],
+  "approval_required": ["git.commit", "git.push", "github.issue_comment"],
+  "binaries": {
+    "git": {"path": "/usr/bin/git", "sha256": "REPLACE_WITH_REVIEWED_BINARY_SHA256"},
+    "gh": {"path": "/opt/homebrew/bin/gh", "sha256": "REPLACE_WITH_REVIEWED_BINARY_SHA256"}
+  }
+}
