@@ -41,7 +41,7 @@ class ExecutionTests(unittest.TestCase):
         (self.root / 'AGENTS.md').write_text('protected')
         self.git('add', '.')
         self.git('commit', '-qm', 'synthetic baseline')
-        self.git('switch', '-qc', 'codex/synthetic')
+        self.git('switch', '-qc', 'feat/33-synthetic')
         self.marker = self.base / 'publisher-starts.txt'
         self.fake = self.base / 'fake-gh'
         # 합성 게시 도구: stdout의 비밀값·본문을 게이트가 저장하지 않는지도 검사한다.
@@ -177,7 +177,7 @@ class ExecutionTests(unittest.TestCase):
             changed = deepcopy(request)
             changed['args'][field] = value
             self.assert_blocked(changed, 'approval_required')
-        changed = self.request('git.push', {'branch': 'codex/synthetic', 'head': self.git('rev-parse', 'HEAD')})
+        changed = self.request('git.push', {'branch': 'feat/33-synthetic', 'head': self.git('rev-parse', 'HEAD')})
         self.assert_blocked(changed, 'approval_required')
 
     def test_other_repository_approval_not_reused(self):
@@ -329,15 +329,150 @@ class ExecutionTests(unittest.TestCase):
 
     def test_push_url_override_denied_before_push(self):
         self.git('config', 'remote.origin.pushurl', 'https://github.com/other/repo.git')
-        request = self.request('git.push', {'branch': 'codex/synthetic', 'head': self.git('rev-parse', 'HEAD')})
+        request = self.request('git.push', {'branch': 'feat/33-synthetic', 'head': self.git('rev-parse', 'HEAD')})
         self.assertEqual(self.assert_blocked(request)['rule'], 'repository')
+
+    def synthetic_transport(self):
+        """실제 Git을 쓰되 HTTPS helper만 로컬 프로토콜 대역으로 고정한다. 네트워크 없음."""
+        real_git = shutil.which('git')
+        directory = self.base / 'git-core'
+        directory.mkdir()
+        helper = directory / 'git-remote-https'
+        helper.write_text('#!' + sys.executable + '\nimport json,os,sys\nfrom pathlib import Path\n'
+                          + 'assert os.environ.get("GIT_ALLOW_PROTOCOL")=="https"\n'
+                          + 'with Path(' + repr(str(self.marker)) + ').open("a") as f: f.write(json.dumps(sys.argv[1:])+"\\n")\n'
+                          + 'pending=[]\n'
+                          + 'for raw in sys.stdin:\n'
+                          + ' line=raw.rstrip("\\n")\n'
+                          + ' if line=="capabilities": print("push\\noption\\n",flush=True)\n'
+                          + ' elif line.startswith("option "): print("ok",flush=True)\n'
+                          + ' elif line.startswith("list"): print("",flush=True)\n'
+                          + ' elif line.startswith("push "): pending.append(line.split(":",1)[1])\n'
+                          + ' elif not line and pending:\n'
+                          + '  for ref in pending: print("ok "+ref)\n'
+                          + '  pending.clear(); print("",flush=True)\n')
+        helper.chmod(0o700)
+        launcher = self.base / 'transport-git'
+        launcher.write_text('#!' + sys.executable + '\nimport os,sys\n'
+                            + 'if sys.argv[-1]=="--exec-path":\n'
+                            + ' print(' + repr(str(directory)) + '); sys.exit(0)\n'
+                            + 'os.environ["GIT_EXEC_PATH"]=' + repr(str(directory)) + '\n'
+                            + 'os.execv(' + repr(real_git) + ',[' + repr(real_git) + ']+sys.argv[1:])\n')
+        launcher.chmod(0o700)
+        self.policy['binaries']['git'] = {'path': str(launcher), 'sha256': gate.file_hash(launcher)}
+        gate.save(self.directory / 'policy.json', self.policy)
+        gate.save(self.directory / 'anchor.json', {'policy_sha256': gate.digest(self.policy)})
+        self.broker = gate.Broker(self.directory)
+        return helper
+
+    def push_request(self):
+        return self.request('git.push', {'branch': self.git('symbolic-ref', '--short', 'HEAD'),
+                                         'head': self.git('rev-parse', 'HEAD')})
+
+    def test_multiple_push_urls_after_approval_no_helper_started(self):
+        self.synthetic_transport()
+        request = self.push_request()
+        self.grant(request)
+        expected = 'https://github.com/synthetic/execution-test.git'
+        self.git('config', '--add', 'remote.origin.pushurl', expected)
+        self.git('config', '--add', 'remote.origin.pushurl', 'https://github.com/unapproved/elsewhere.git')
+        result = self.broker.execute(request)
+        self.assertEqual((result['decision'], result['rule'], result['status']),
+                         ('deny', 'repository', 'not_started'))
+        self.assertFalse(self.marker.exists())
+
+    def test_duplicate_push_urls_also_rejected(self):
+        self.synthetic_transport()
+        request = self.push_request()
+        self.grant(request)
+        for _ in range(2):
+            self.git('config', '--add', 'remote.origin.pushurl', 'https://github.com/synthetic/execution-test.git')
+        self.assertEqual(self.broker.execute(request)['status'], 'not_started')
+        self.assertFalse(self.marker.exists())
+
+    def test_fsmonitor_does_not_start_during_actual_approved_commit(self):
+        request = self.commit_request()
+        monitor = self.base / 'fsmonitor'
+        monitor.write_text('#!' + sys.executable + '\nfrom pathlib import Path\n'
+                           + 'Path(' + repr(str(self.marker)) + ').write_text("fsmonitor started")\n')
+        monitor.chmod(0o700)
+        self.git('config', 'core.fsmonitor', str(monitor))
+        self.grant(request)
+        self.assertFalse(self.marker.exists())
+        self.assertEqual(self.broker.execute(request)['status'], 'succeeded')
+        self.assertFalse(self.marker.exists())
+
+    def test_remote_vcs_override_rejected_before_any_helper_start(self):
+        self.synthetic_transport()
+        request = self.push_request()
+        self.grant(request)
+        unexpected = self.base / 'git-remote-synthetic'
+        unexpected.write_text('#!' + sys.executable + '\nfrom pathlib import Path\n'
+                              + 'Path(' + repr(str(self.marker)) + ').write_text("unapproved helper")\n')
+        unexpected.chmod(0o700)
+        self.git('config', 'remote.origin.vcs', 'synthetic')
+        with patch.dict(os.environ, {'PATH': str(self.base) + os.pathsep + os.environ['PATH']}):
+            result = self.broker.execute(request)
+        self.assertEqual((result['decision'], result['rule'], result['status']),
+                         ('deny', 'integration', 'not_started'))
+        self.assertFalse(self.marker.exists())
+
+    def test_actual_git_push_uses_approved_https_helper_once(self):
+        self.synthetic_transport()
+        request = self.push_request()
+        self.assert_blocked(request, 'approval_required')
+        self.grant(request)
+        unapproved = self.base / 'unapproved-started'
+        hijack = self.base / 'git-remote-https'
+        hijack.write_text('#!' + sys.executable + '\nfrom pathlib import Path\n'
+                          + 'Path(' + repr(str(unapproved)) + ').write_text("bad")\n')
+        hijack.chmod(0o700)
+        with patch.dict(os.environ, {'GIT_EXEC_PATH': str(self.base),
+                                    'PATH': str(self.base) + os.pathsep + os.environ['PATH']}):
+            result = self.broker.execute(request)
+        self.assertEqual(result['status'], 'succeeded', result)
+        self.assertFalse(unapproved.exists())
+        self.assertTrue(self.broker.execute(request)['replayed'])
+        starts = [json.loads(line) for line in self.marker.read_text().splitlines()]
+        self.assertEqual(starts, [['origin', 'https://github.com/synthetic/execution-test.git']])
+
+    def test_helper_change_needs_new_approval_and_missing_helper_denied(self):
+        helper = self.synthetic_transport()
+        request = self.push_request()
+        self.grant(request)
+        helper.write_text(helper.read_text() + '\n# changed transport\n')
+        self.assert_blocked(request, 'approval_required')
+        helper.unlink()
+        self.assertEqual(self.assert_blocked(request)['rule'], 'integration')
+
+    def test_url_rewrite_config_rejected_even_with_explicit_push_url(self):
+        self.synthetic_transport()
+        request = self.push_request()
+        self.grant(request)
+        self.git('config', 'remote.origin.pushurl', 'https://github.com/synthetic/execution-test.git')
+        self.git('config', 'url.https://github.com/unapproved/.pushInsteadOf',
+                 'https://github.com/synthetic/')
+        self.assertEqual(self.assert_blocked(request)['rule'], 'integration')
+
+    def test_repository_branch_types_reach_approval_and_invalid_names_rejected(self):
+        for branch in ['feat/33-execution-gate', 'fix/34-check', 'docs/git-conventions',
+                       'test/35-check', 'refactor/36-check', 'chore/37-check']:
+            with self.subTest(branch=branch):
+                self.git('switch', '-qc', branch)
+                self.assert_blocked(self.push_request(), 'approval_required')
+        for branch in ['main', 'codex/synthetic', 'feat/033-check', 'feat/0-check',
+                       'feat/33--check', 'feat/33-check/extra']:
+            with self.subTest(branch=branch):
+                request = self.push_request()
+                request['args']['branch'] = branch
+                self.assertEqual(self.assert_blocked(request)['rule'], 'scope')
 
     def test_approved_push_actual_synthetic_process_once_no_network(self):
         real_git = self.policy['binaries']['git']['path']
         fake_git = self.base / 'fake-git'
         fake_git.write_text('#!' + sys.executable + '\nimport os,sys\nfrom pathlib import Path\n'
                             + 'if "push" in sys.argv[1:]:\n'
-                            + ' assert sys.argv[-2:]==["origin","HEAD:refs/heads/codex/synthetic"]\n'
+                            + ' assert sys.argv[-2:]==["origin","HEAD:refs/heads/feat/33-synthetic"]\n'
                             + ' assert "--no-follow-tags" in sys.argv and "--recurse-submodules=no" in sys.argv\n'
                             + ' with Path(' + repr(str(self.marker)) + ').open("a") as f: f.write("push\\n")\n'
                             + ' sys.exit(0)\n'
@@ -347,7 +482,7 @@ class ExecutionTests(unittest.TestCase):
         gate.save(self.directory / 'policy.json', self.policy)
         gate.save(self.directory / 'anchor.json', {'policy_sha256': gate.digest(self.policy)})
         self.broker = gate.Broker(self.directory)
-        request = self.request('git.push', {'branch': 'codex/synthetic', 'head': self.git('rev-parse', 'HEAD')})
+        request = self.request('git.push', {'branch': 'feat/33-synthetic', 'head': self.git('rev-parse', 'HEAD')})
         self.assert_blocked(request, 'approval_required')
         self.grant(request)
         self.assertEqual(self.broker.execute(request)['status'], 'succeeded')

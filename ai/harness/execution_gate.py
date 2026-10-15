@@ -20,6 +20,7 @@ PROTECTED = ['.git', '.codex', '.agents', '.github', 'AGENTS.md', '.gitignore',
              '.gitattributes', '.gitmodules', 'ai/harness', 'ai/WORKFLOW.md',
              'docs/conventions/git.md']
 MAX_INPUT = 1024 * 1024
+WORK_BRANCH = r'(?:feat|fix|docs|test|refactor|chore)/(?:[1-9][0-9]*-)?[a-z][a-z0-9]*(?:-[a-z0-9]+)*'
 REASONS = {
     'scope': '작업·디렉터리·대상이 허용 범위와 다릅니다. 선언한 범위로 요청하십시오.',
     'protected': '보호 경로입니다. 일반 작업으로 수정할 수 없습니다.',
@@ -198,15 +199,53 @@ class Broker:
             raise Invalid('integration: 실행 파일 변경·누락')
         return item['path']
 
+    def git_command(self, *args):
+        # 검사와 실제 전달에 같은 제한을 적용한다. 사용자/저장소 설정은 수정하지 않는다.
+        options = {'core.hooksPath': '/dev/null', 'core.fsmonitor': 'false',
+                   'commit.gpgsign': 'false', 'push.gpgSign': 'false',
+                   'credential.helper': '', 'core.askPass': '/usr/bin/false',
+                   'maintenance.auto': 'false', 'gc.auto': '0',
+                   'remote.origin.mirror': 'false', 'push.followTags': 'false',
+                   'http.followRedirects': 'false'}
+        command = [self.binary('git')]
+        for key, value in options.items():
+            command.extend(['-c', key + '=' + value])
+        return command + list(args)
+
+    def git_environment(self, exec_path=None):
+        environment = tool_environment()
+        environment.update(GIT_ALLOW_PROTOCOL='https', GIT_TERMINAL_PROMPT='0')
+        environment.pop('SSH_ASKPASS', None)
+        if exec_path is not None:
+            environment['GIT_EXEC_PATH'] = exec_path
+        return environment
+
     def git(self, *args):
-        # 저장소별 hook이 별도 프로세스를 시작하지 않게 한다. 셸을 사용하지 않는다.
-        result = subprocess.run([self.binary('git'), '-c', 'core.hooksPath=/dev/null',
-                                 '-c', 'core.fsmonitor=false', '-c', 'commit.gpgsign=false', *args], cwd=self.root,
+        result = subprocess.run(self.git_command(*args), cwd=self.root,
                                 stdin=subprocess.DEVNULL, capture_output=True, timeout=30,
-                                env=tool_environment())
+                                env=self.git_environment())
         if result.returncode:
             raise Invalid('repository: Git 상태 확인 실패')
         return result.stdout
+
+    def push_transport(self):
+        # remote.<name>.vcs는 HTTPS URL을 별도 remote helper로 바꿀 수 있다.
+        for entry in self.git('config', '--null', '--list').decode().split('\x00'):
+            key = entry.partition('\n')[0].lower()
+            if ((key.startswith('remote.') and key.endswith('.vcs'))
+                    or (key.startswith('url.') and key.endswith(('.insteadof', '.pushinsteadof')))
+                    or (key.startswith('http.') and key != 'http.followredirects'
+                        and key.endswith('.followredirects'))):
+                raise Invalid('integration: 원격 helper·URL 재작성·개별 redirect 설정 미지원')
+        # 고정 Git이 제공하는 HTTPS helper도 실제 승인 대상으로 식별한다.
+        directory = Path(self.git('--exec-path').decode().strip())
+        if not directory.is_absolute():
+            raise Invalid('integration: Git exec-path는 절대 경로 필요')
+        helper = directory / 'git-remote-https'
+        resolved = helper.resolve()
+        if self.root == resolved or self.root in resolved.parents or not os.access(helper, os.X_OK):
+            raise Invalid('integration: 저장소 밖의 실행 가능한 HTTPS helper 필요')
+        return {'exec_path': str(directory), 'https_helper_sha256': file_hash(helper)}
 
     def scoped_path(self, name):
         relative(name)
@@ -270,14 +309,17 @@ class Broker:
         elif tool == 'git.push':
             fields(args, {'branch', 'head'})
             branch = args['branch']
-            if not isinstance(branch, str) or not re.fullmatch(r'codex/[a-z0-9][a-z0-9/-]{0,100}', branch):
-                raise Invalid('scope: codex 작업 브랜치만 푸시 지원')
+            if not isinstance(branch, str) or len(branch) > 128 or not re.fullmatch(WORK_BRANCH, branch):
+                raise Invalid('scope: 저장소의 타입/이슈번호-요약 브랜치 규칙 필요')
             current = self.git('symbolic-ref', '--short', 'HEAD').decode().strip()
             context['head'] = self.git('rev-parse', 'HEAD').decode().strip()
             if branch != current or args['head'] != context['head']:
                 raise Invalid('stale: 푸시 브랜치·HEAD 변경')
-            if self.git('remote', 'get-url', '--push', 'origin').decode().strip() != expected:
-                raise Invalid('repository: 실제 push URL 불일치')
+            urls = self.git('remote', 'get-url', '--push', '--all', 'origin').decode().splitlines()
+            if urls != [expected]:
+                raise Invalid('repository: 실제 push URL은 승인 저장소 1개만 허용')
+            context['push_urls'] = urls
+            context['git_transport'] = self.push_transport()
         else:
             fields(args, {'issue', 'body'})
             if (type(args['issue']) is not int or args['issue'] < 1 or not isinstance(args['body'], str)
@@ -331,20 +373,21 @@ class Broker:
                         pass
             return 0
         if tool == 'git.commit':
-            command = [self.binary('git'), '-c', 'core.hooksPath=/dev/null', '-c',
-                       'commit.gpgsign=false', 'commit', '--no-verify', '-m', args['message']]
+            command = self.git_command('commit', '--no-verify', '-m', args['message'])
+            environment = self.git_environment()
         elif tool == 'git.push':
-            command = [self.binary('git'), '-c', 'core.hooksPath=/dev/null', '-c',
-                       'remote.origin.mirror=false', '-c', 'push.followTags=false', 'push',
-                       '--no-verify', '--no-follow-tags', '--recurse-submodules=no',
-                       'origin', 'HEAD:refs/heads/' + args['branch']]
+            command = self.git_command('push', '--no-verify', '--no-follow-tags',
+                                       '--recurse-submodules=no', 'origin',
+                                       'HEAD:refs/heads/' + args['branch'])
+            environment = self.git_environment(self.push_transport()['exec_path'])
         else:
             command = [self.binary('gh'), 'api', '--hostname', 'github.com', '--method', 'POST',
                        'repos/' + self.policy['repository'] + '/issues/' + str(args['issue']) + '/comments',
                        '--input', '-']
+            environment = tool_environment()
         body = encoded({'body': args['body']}) if tool == 'github.issue_comment' else None
         result = subprocess.run(command, cwd=self.root, input=body, stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL, timeout=120, env=tool_environment())
+                                stderr=subprocess.DEVNULL, timeout=120, env=environment)
         return result.returncode
 
     def execute(self, request):

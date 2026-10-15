@@ -14,11 +14,15 @@
 |---|---|---|
 | `file.write` | 부모가 존재하는 UTF-8 일반 파일 생성·전체 교체. 상대 경로·기존 내용 해시·권한 확인 | 정책에서 추가 가능 |
 | `git.commit` | 기존 스테이징 전체 경로·HEAD·전체 index 목록 해시 확인. add는 하지 않음 | 필수 |
-| `git.push` | 현재 `codex/` 브랜치 HEAD를 origin의 같은 브랜치로 전달. 실제 push URL 확인. force·추가 tag·서브모듈 push 없음 | 필수 |
+| `git.push` | 저장소 규칙에 맞는 현재 작업 브랜치 HEAD를 origin의 같은 브랜치로 전달. 실제 push URL 전체가 승인 저장소 1개여야 함. force·추가 tag·서브모듈 push 없음 | 필수 |
 | `github.issue_comment` | 고정 github.com의 선언한 저장소·이슈 번호에 새 댓글 POST. PR conversation 댓글도 같은 API | 필수 |
 | 임의 셸·복합 명령·PR 본문 수정·다른 도구 | 미지원으로 거부. 임의 인자나 `approved` 필드 추가도 거부 | 승인으로 해제 불가 |
 
-명령 문자열의 특정 단어 검색으로 판정하지 않는다. Git hook·커밋 서명용 프로그램·push hook은 이 경로에서 실행하지 않는다. 서명 필수 저장소나 별도 hook 실행이 필요한 작업에는 이 커밋 어댑터를 적용하지 않는다. 실행 파일 위치·해시를 고정하고 Git 경로/index override·GitHub host override 환경을 제거한다. gh 자격 증명은 기존 도구 설정을 사용하되 토큰·출력은 저장하지 않는다.
+명령 문자열의 특정 단어 검색으로 판정하지 않는다. Git 검사·실제 커밋·푸시는 같은 안전 설정을 사용한다. hook·fsmonitor·커밋/푸시 서명·자동 maintenance/gc와 임의 credential helper·askpass를 비활성화한다. 사용자나 저장소의 Git 설정 파일 자체는 바꾸지 않는다. 서명 필수 저장소나 별도 hook·프로그램 기반 인증이 필요한 작업에는 이 어댑터를 그대로 적용하지 않는다. 필요한 인증이 없으면 푸시가 실패하며 임의 인증 프로그램을 대신 실행하지 않는다. gh 댓글 도구는 기존 gh 자격 설정을 사용하되 토큰·출력은 저장하지 않는다.
+
+푸시는 Git이 제공한 `--exec-path`의 HTTPS helper 경로·내용 해시를 승인 범위에 추가한다. 실제 전달은 그 디렉터리로 `GIT_EXEC_PATH`를 고정하고 `GIT_ALLOW_PROTOCOL=https`로 제한한다. PATH·호출 환경으로 넣은 다른 helper는 선택하지 않는다. `remote.*.vcs`, URL 재작성, 개별 URL의 redirect 설정은 미지원으로 거부하며 HTTP redirect는 비활성화한다. helper가 바뀌면 기존 승인과 일치하지 않아 다시 확인해야 한다. 승인 범위가 보강됐으므로 이전 버전에서 발급한 푸시 승인을 그대로 재사용하지 않는다. 정책 JSON 형식은 바뀌지 않는다.
+
+이 설정의 근거는 [Git 원격·프로그램 설정](https://git-scm.com/docs/git-config)과 [Git 환경 변수](https://git-scm.com/docs/git)에서 확인했다. Git 설치 자체·라이브러리·OS의 모든 하위 실행까지 격리하는 장치는 아니다. Git 실행 파일과 HTTPS helper를 신뢰한 환경을 전제로 한다.
 
 ## 정책과 사용자 승인
 
@@ -66,7 +70,7 @@ python3 -B ai/harness/execution_gate.py --authority "$AUTHORITY" < /absolute/req
 ```
 
 ```json
-{"branch":"codex/example", "head":"현재 HEAD"}
+{"branch":"feat/33-execution-gate", "head":"현재 HEAD"}
 ```
 
 ```json
@@ -74,6 +78,8 @@ python3 -B ai/harness/execution_gate.py --authority "$AUTHORITY" < /absolute/req
 ```
 
 응답은 decision(allow/deny/approval_required), rule·한국어 reason, status·실제 exit_code로 구분한다. allow가 성공을 뜻하지 않는다. 종료 코드 0은 succeeded, 3은 승인 필요, 2는 거부·실패·불명확 결과다. 프로세스 종료 확인 시 성공/실패를 구분하고 timeout·전달 후 기록 실패는 unknown으로 남긴다.
+
+브랜치는 `feat|fix|docs|test|refactor|chore` 타입과 소문자 kebab-case 요약을 사용하며, 이슈 번호가 있으면 앞자리 0 없는 양수로 적는다. 예: `feat/33-execution-gate`, `docs/git-conventions`. main·codex 접두사·중첩 경로·잘못된 이슈 번호는 이 저장소의 중개 푸시 범위에서 거부한다.
 
 승인 필요 시 실행하지 않고 scope 해시를 반환한다. 승인 후 **같은 JSON을 재전달**하면 정책·서명·파일·HEAD/index·원격·실행 파일을 다시 확인한다. 승인 UI 대기 중 대상이 변해도 서명하지 않는다. 판정 오류·잘못된 선언·연동 실패에는 대상 도구를 전달하지 않는다.
 
