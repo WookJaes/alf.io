@@ -30,6 +30,42 @@ import static org.junit.jupiter.api.Assertions.*;
 class ReservationLoadMetricsTest {
     private static final String SOLD_OUT = "error.STEP_1_NOT_ENOUGH_TICKETS";
 
+    private static java.util.List<Attempt> measuredAttempts(int failures, String outcome) {
+        var attempts = new java.util.ArrayList<Attempt>();
+        for (int i = 0; i < 1000; i++) {
+            attempts.add(new Attempt(i < failures ? outcome : i < failures + 100 ? "complete" : "inventory_rejection",
+                1, "", "", ""));
+        }
+        return attempts;
+    }
+
+    @Test
+    void oneUnexpectedOutcomeCannotPassEvenWithAllTicketsComplete() {
+        for (var outcome : Set.of("server_error", "unexpected_response", "client_error", "timeout")) {
+            assertThrows(AssertionError.class, () -> requireSuccessfulRun(measuredAttempts(1, outcome),
+                new DbSnapshot(100, 100, 0, 0, 0)), outcome);
+        }
+    }
+
+    @Test
+    void moreThanFivePercentErrorsCannotReturnSuccess() {
+        assertThrows(AssertionError.class, () -> requireSuccessfulRun(measuredAttempts(51, "server_error"),
+            new DbSnapshot(100, 100, 0, 0, 0)));
+    }
+
+    @Test
+    void allRequestsFailingWithUntouchedInventoryCannotPass() {
+        assertThrows(AssertionError.class, () -> requireSuccessfulRun(measuredAttempts(1000, "server_error"),
+            new DbSnapshot(0, 0, 100, 0, 0)));
+    }
+
+    @Test
+    void expectedSuccessAndSoldOutCountsPassOnlyWithFullyAllocatedInventory() {
+        var attempts = measuredAttempts(0, "server_error");
+        assertDoesNotThrow(() -> requireSuccessfulRun(attempts, new DbSnapshot(100, 100, 0, 0, 0)));
+        assertThrows(AssertionError.class, () -> requireSuccessfulRun(attempts, new DbSnapshot(99, 99, 1, 0, 0)));
+    }
+
     private static Response validationFailure(int status, String... codes) {
         var descriptors = java.util.Arrays.stream(codes)
             .map(code -> new ValidationResult.ErrorDescriptor("reservation", "", code))

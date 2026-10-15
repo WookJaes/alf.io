@@ -17,12 +17,14 @@
 package alfio.e2e;
 
 import alfio.util.Json;
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import tools.jackson.databind.JsonNode;
 
 import java.net.URI;
+import java.net.InetSocketAddress;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
 import java.net.http.HttpClient;
@@ -62,16 +64,25 @@ class ReservationLoadValidationTest {
         private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3))
             .cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL)).version(HttpClient.Version.HTTP_1_1).build();
         private final String base;
+        private final ReservationFault fault;
         private String csrf;
         private String session;
         final AtomicLong requests = new AtomicLong();
         Client(String base) throws Exception {
+            this(base, null);
+        }
+        Client(String base, ReservationFault fault) throws Exception {
             this.base = base;
+            this.fault = fault;
             try { requireOk(request("events", null)); } catch (Exception e) { http.close(); throw e; }
         }
         Response request(String path, Object data) throws Exception {
             requests.incrementAndGet();
-            var builder = HttpRequest.newBuilder(URI.create(base + "/api/v2/public/" + path))
+            var target = URI.create(base + "/api/v2/public/" + path);
+            if (fault != null && data != null && path.contains("/reserve-tickets?") && fault.take()) {
+                target = fault.endpoint;
+            }
+            var builder = HttpRequest.newBuilder(target)
                 .header("X-Requested-With", "XMLHttpRequest").timeout(Duration.ofSeconds(10));
             if (session != null) { builder.header("X-Auth-Token", session); }
             if (data != null) {
@@ -109,10 +120,34 @@ class ReservationLoadValidationTest {
         @Override public void close() { http.close(); }
     }
 
+    /** Explicit diagnostic mode: real loopback HTTP 503, never enabled by default. */
+    static final class ReservationFault implements AutoCloseable {
+        private final java.util.concurrent.atomic.AtomicInteger remaining;
+        private final HttpServer server;
+        private final URI endpoint;
+        ReservationFault(int count) throws Exception {
+            remaining = new java.util.concurrent.atomic.AtomicInteger(count);
+            if (count == 0) { server = null; endpoint = null; return; }
+            server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            server.createContext("/", exchange -> {
+                try (exchange) {
+                    exchange.getRequestBody().readAllBytes();
+                    byte[] body = "{}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(503, body.length);
+                    exchange.getResponseBody().write(body);
+                }
+            });
+            server.start();
+            endpoint = URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/");
+        }
+        boolean take() { return remaining.getAndUpdate(value -> Math.max(0, value - 1)) > 0; }
+        @Override public void close() { if (server != null) { server.stop(0); } }
+    }
+
     static final class Clients implements AutoCloseable {
         final List<Client> values = new ArrayList<>();
-        Clients(String base, int count) throws Exception {
-            try { for (int i = 0; i < count; i++) { values.add(new Client(base)); } }
+        Clients(String base, int count, ReservationFault fault) throws Exception {
+            try { for (int i = 0; i < count; i++) { values.add(new Client(base, fault)); } }
             catch (Exception e) { close(); throw e; }
         }
         @Override public void close() {
@@ -186,7 +221,10 @@ class ReservationLoadValidationTest {
             environment.seedAdministrator();
             environment.assertNoDataMigrationFailure();
             return environment;
-        } catch (Exception e) { environment.close(); throw e; }
+        } catch (Exception e) {
+            try { environment.close(); } catch (Exception cleanup) { e.addSuppressed(cleanup); }
+            throw e;
+        }
     }
 
     private static DbSnapshot safety(ValidationEnvironment environment, Fixture fixture, List<Attempt> attempts, int capacity) throws Exception {
@@ -313,7 +351,10 @@ class ReservationLoadValidationTest {
                     System.out.printf("Load start: concurrency=%d repeat=%d total=1000 capacity=100 warmup=20%n", concurrency, repeat);
                     client.requests.set(0);
                     var attempts = new ArrayList<Attempt>();
-                    try (var clients = new Clients(environment.baseUrl(), concurrency)) {
+                    int injected = Integer.parseInt(Objects.requireNonNullElse(System.getenv("ALFIO_LOAD_INJECT_503"), "0"));
+                    assertTrue(injected >= 0 && injected <= 1000);
+                    try (var fault = new ReservationFault(injected);
+                         var clients = new Clients(environment.baseUrl(), concurrency, fault)) {
                     var nextClient = new java.util.concurrent.atomic.AtomicInteger();
                     var workerClient = ThreadLocal.withInitial(() -> clients.values.get(nextClient.getAndIncrement()));
                     double cpuStart = environment.applicationCpuSeconds();
@@ -341,11 +382,6 @@ class ReservationLoadValidationTest {
                     }
                     var snapshot = safety(environment, fixture, attempts, 100);
                     double successWindow = lastSuccess.get() == 0 ? Double.NaN : (lastSuccess.get() - start) / 1_000_000_000.0;
-                    if (attempts.stream().allMatch(a -> Set.of("complete", "inventory_rejection").contains(a.outcome))) {
-                        assertEquals(100, snapshot.complete, "No unexplained early inventory rejection");
-                        assertEquals(0, snapshot.free);
-                        assertEquals(0, snapshot.pending);
-                    }
                     for (var outcome : List.of("complete", "inventory_rejection", "server_error", "unexpected_response", "client_error", "timeout")) {
                         var latencies = attempts.stream().filter(a -> a.outcome.equals(outcome)).mapToDouble(Attempt::millis).sorted().toArray();
                         double mean = Arrays.stream(latencies).average().orElse(Double.NaN);
@@ -359,14 +395,22 @@ class ReservationLoadValidationTest {
                     }
                     attempts.stream().filter(a -> !Set.of("complete", "inventory_rejection").contains(a.outcome)).map(Attempt::failure).distinct().forEach(e -> System.out.println("Load failure: " + e));
                     environment.assertNoDataMigrationFailure();
-                    if (attempts.stream().filter(a -> !Set.of("complete", "inventory_rejection").contains(a.outcome)).count() > 50) {
-                        System.out.println("Escalation stopped: more than 5% unexpected failures; measured limit retained.");
-                        return;
-                    }
+                    requireSuccessfulRun(attempts, snapshot);
                     }
                 }
             }
         }
+    }
+
+    static void requireSuccessfulRun(List<Attempt> attempts, DbSnapshot snapshot) {
+        assertEquals(0, attempts.stream().filter(a -> !Set.of("complete", "inventory_rejection").contains(a.outcome)).count(),
+            "Unexpected load failures; measurements retained, escalation stopped");
+        assertEquals(1000, attempts.size());
+        assertEquals(100, attempts.stream().filter(a -> a.outcome.equals("complete")).count());
+        assertEquals(900, attempts.stream().filter(a -> a.outcome.equals("inventory_rejection")).count());
+        assertEquals(100, snapshot.complete, "No unexplained early inventory rejection");
+        assertEquals(0, snapshot.free);
+        assertEquals(0, snapshot.pending);
     }
 
     @Test

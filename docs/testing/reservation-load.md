@@ -108,7 +108,9 @@ portable DB는 매 실행 새 임시 `postgres-data`를 `initdb`로 만든다. `
 
 오류 없이 정확히 100개 확정·900개 품절 거절이면 부하 구간 실제 HTTP는 `100 × 5 + 900 × 2 = 2,300개`다. 이 중 확보 POST는 1,000개다. 세션 초기화, warmup, 관리자 행사 생성·게시, 별도 경계·재전송 테스트 HTTP는 2,300개에 포함하지 않는다. 실패가 중간에 발생하면 실제 HTTP 수가 달라지므로 CSV 값을 확인한다.
 
-예상 품절 거절 이외의 결과가 1,000개 중 50개를 넘으면 추가 부하 증가를 중단한다. 이 중단은 성능 기준을 통과했다는 뜻이 아니다. 도달한 단계와 오류를 기록하고 원인을 조사한다.
+예상 품절 거절 이외의 결과가 **1건이라도 있으면**, 해당 회차의 CSV와 최종 DB 상태를 남긴 뒤 JUnit을 실패시켜 추가 부하 증가를 중단한다. 오류 없이 정확히 100개 확정·900개 예상 거절, 최종 COMPLETE 100개·FREE/PENDING 0장이어야 통과한다. 오류를 측정했다는 사실과 수용 기준 통과를 구분한다.
+
+오류 판정 자체를 재현하려면 warmup 뒤 확보 POST만 loopback HTTP 503 서버로 일부 보내는 진단 모드를 사용할 수 있다. 제품 앱의 장애나 성능 측정으로 해석하지 않는다. `ALFIO_LOAD_INJECT_503`은 기본 0, 허용 범위 0~1,000이며 회차별 적용된다. 예를 들어 단계 `1,5`, 반복 `1`, 새 label과 주입 수 `1` 또는 `51`을 지정하고 `reservationLoadValidation --tests alfio.e2e.ReservationLoadValidationTest.steppedLoad`를 실행하면 첫 단계에서 실패해야 한다. CSV에는 각각 `server_error=1` 또는 `51`이 남고 다음 단계는 실행하지 않아야 한다. `check-results.py`도 실패해야 한다. 진단 뒤 `Remove-Item Env:ALFIO_LOAD_INJECT_503`으로 해제하고 정상 검증을 실행한다. 실제 서버에 전달된 확보 POST 수는 주입 수만큼 줄어든다.
 
 ## 지표 해석
 
@@ -149,11 +151,11 @@ HTTP 완료 응답에서 받은 reservation·ticket 식별자는 메모리에서
 - 새 JUnit XML: `build/test-results/reservationLoadValidation/`. HTML: `build/reports/tests/reservationLoadValidation/`.
 - 모두 `.gitignore`의 `build/` 아래다. 원본 CSV·JSON·로그·덤프·비밀값·개인정보는 커밋하거나 외부 게시하지 않는다. 커밋 가능한 작업 기록에는 집계·조건·코드 식별·실제 명령·종료 결과·한계만 적는다.
 - 정상 종료와 일반 예외 시 브라우저·앱·전용 DB를 닫고 임시 폴더를 제거한다. 앱 준비·data migration 실패의 진단 사본은 `build/validation`에 남을 수 있다. 합성 비밀값이 포함될 수 있으므로 그대로 공유하지 않는다.
-- 전용 PostgreSQL 종료에 실패하면 데이터 폴더를 보존한다. 강제 OS 종료·프로세스 강제 종료 후에는 정리가 보장되지 않는다. 실행 소유 PID·임시 폴더·컨테이너를 확인해 그 실행 자원만 정리한다. 기존 사용자 DB·컨테이너나 전체 PostgreSQL 프로세스를 일괄 종료하지 않는다.
+- 전용 PostgreSQL 시작은 성공 여부와 별도로 시도 여부를 추적한다. 시작 실패·준비 timeout 뒤에도 소유 데이터 경로의 서버를 확인·정지하며, 정지 확인 실패나 상태 불명일 때 데이터 폴더를 보존한다. 정리 오류는 원래 시작 오류에 suppressed로 연결한다. 강제 OS 종료·프로세스 강제 종료 후에는 정리가 보장되지 않는다. 실행 소유 PID·임시 폴더·컨테이너를 확인해 그 실행 자원만 정리한다. 기존 사용자 DB·컨테이너나 전체 PostgreSQL 프로세스를 일괄 종료하지 않는다.
 
 ## 실제 측정 결과
 
-측정 기준 HEAD는 `b2cb15333f5a67115ac8ccac7b754517f565fc18`이며, 해당 HEAD 위의 미커밋 검증 자산으로 실행했다. 부하 검사 코드 SHA-256은 `f3037c068aed2d06a130e2be6bb85d59263bef42031d591d0140026835f5e714`, 앱 JAR SHA-256은 `3f0d902e90e15d8a8e048b60c618ba7830845d3f87f8729a4b361ed232195936`다. 측정 중 제품 예약 코드와 앱 설정은 바꾸지 않았다.
+측정 기준 HEAD는 `b2cb15333f5a67115ac8ccac7b754517f565fc18`이며, 해당 HEAD 위의 미커밋 검증 자산으로 실행했다. 부하 검사 코드 SHA-256은 `f3037c068aed2d06a130e2be6bb85d59263bef42031d591d0140026835f5e714`, 앱 JAR SHA-256은 `3f0d902e90e15d8a8e048b60c618ba7830845d3f87f8729a4b361ed232195936`다. 측정 중 제품 예약 코드와 앱 설정은 바꾸지 않았다. 원 측정 소스는 Windows CRLF 바이트 해시이며, 커밋 `2344241`의 같은 파일을 LF로 정규화한 SHA-256은 `66227b8a3bc0865ea6c4f86d5fd31699d1c6c67fc0536219763cebaf4b6d5fc2`다. 해당 커밋 blob을 CRLF로 복원하면 위 `f3037c…` 값과 일치함을 확인했다. 이후 리뷰 수정의 재검증은 [별도 기록](../harness/records/2026-10-15-pr32-review-fixes.md)에 구분한다.
 
 환경은 Windows 10 Pro 10.0.19045, Ryzen 7 1800X(8코어/16논리 CPU), RAM 17,086,177,280 bytes, Java 25.0.4.1+1, Gradle 9.7.1, PostgreSQL 16.13 전용 프로세스다. C:는 220,358,246,400 bytes의 File Backed Virtual Disk로 관찰했다. 물리 저장장치와 가상 디스크 계층의 영향을 분리 측정하지 않았다. 앱 최대 힙은 768m, 기존 DB 연결 풀 max=10/min=5, 연결 대기 제한은 1,000ms다. 실제 DB 출력은 `max_connections=100`, `shared_buffers=128MB`, `work_mem=4MB`, `fsync=on`, `synchronous_commit=on`, `track_io_timing=on`이었다.
 

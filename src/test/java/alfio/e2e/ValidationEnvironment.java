@@ -44,7 +44,7 @@ public final class ValidationEnvironment implements AutoCloseable {
         try {
             postgres.start(temporaryDirectory);
         } catch (Exception e) {
-            close();
+            try { close(); } catch (Exception cleanup) { e.addSuppressed(cleanup); }
             throw e;
         }
     }
