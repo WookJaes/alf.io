@@ -17,6 +17,7 @@ The open source ticket reservation system.
 <details open>
   <summary>Table of Contents</summary>
   <ol>
+    <li><a href="#attendee-reconciliation-assistant-in-this-fork">Attendee reconciliation assistant in this fork</a></li>
     <li><a href="#prerequisites">Prerequisites</a></li>
     <li><a href="#spring-profiles">Spring profiles</a></li>
     <li><a href="#run-in-development-mode">Run in development mode</a></li>
@@ -28,6 +29,12 @@ The open source ticket reservation system.
 
   </ol>
 </details>
+
+## Attendee reconciliation assistant in this fork
+
+This fork adds an attendee reconciliation assistant to the event administration screen. It compares a CSV export (`ID`, `E-Mail`) with event tickets, highlights missing entries, duplicate ticket IDs and email mismatches, and lets organizers reopen saved comparisons. Optional AI assistance composes explanations and message drafts from verified findings; organizers can review, edit and copy the drafts. It does not send messages or change reservations.
+
+See the [usage and configuration guide](docs/attendee-reconciliation.md), [evaluation results and limitations](docs/attendee-assistant-evaluation.md), and [manual evaluation procedure](docs/attendee-assistant-manual-evaluation.md) (in Korean).
 
 ## Prerequisites
 
