@@ -52,6 +52,8 @@ import java.net.URI;
 import java.net.http.*;
 import java.nio.file.*;
 import java.sql.*;
+import java.security.MessageDigest;
+import tools.jackson.databind.JsonNode;
 import java.time.*;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -87,6 +89,8 @@ class ReservationDetailBenchmark {
 
     static final List<String> SQL = new CopyOnWriteArrayList<>();
     static volatile boolean counting;
+    static boolean largeSuite() { return "large".equals(System.getProperty("benchmark.suite", "standard")); }
+    static String resultPrefix() { return largeSuite() ? "issue35-large" : "issue35"; }
     record Fixture(Event event, String reservation, int tickets, int categoryCount) {}
 
     @Test
@@ -99,9 +103,12 @@ class ReservationDetailBenchmark {
             .filter(a -> a.startsWith("-X") || a.equals("-ea") || a.startsWith("-Duser.timezone=") || a.startsWith("-Dfile.encoding=")).toList());
         environment.put("postgres", jdbc.queryForMap("select version() as version, current_setting('shared_buffers') as shared_buffers, current_setting('max_connections') as max_connections, current_setting('jit') as jit, current_setting('fsync') as fsync, current_setting('synchronous_commit') as synchronous_commit, current_setting('timezone') as timezone", Map.of()));
         environment.put("hikari", Map.of("maxPoolSize", pool.getMaximumPoolSize(), "minIdle", pool.getMinimumIdle(), "connectionTimeoutMs", pool.getConnectionTimeout(), "idleTimeoutMs", pool.getIdleTimeout(), "maxLifetimeMs", pool.getMaxLifetime(), "autoCommit", pool.isAutoCommit()));
-        Files.writeString(Path.of("build/issue35-environment-"+System.getProperty("benchmark.phase")+"-"+System.getProperty("benchmark.mode")+".json"), Json.OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(environment));
+        Files.writeString(Path.of("build/"+resultPrefix()+"-environment-"+System.getProperty("benchmark.phase")+"-"+System.getProperty("benchmark.mode")+".json"), Json.OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(environment));
         var fixtures = new ArrayList<Fixture>();
-        for (int[] condition : new int[][]{{1,1},{5,1},{20,1},{20,2},{20,4}}) {
+        int[][] conditions = largeSuite()
+            ? new int[][]{{100,1},{100,2},{100,4},{500,1},{500,2},{500,4}}
+            : new int[][]{{1,1},{5,1},{20,1},{20,2},{20,4}};
+        for (int[] condition : conditions) {
             fixtures.add(fixture(condition[0], condition[1]));
         }
         String phase = System.getProperty("benchmark.phase");
@@ -124,11 +131,7 @@ class ReservationDetailBenchmark {
                     row.put("configurationSql", SQL.stream().filter(s -> s.contains("configuration_ticket_category")).count());
                     row.put("categorySql", SQL.stream().filter(s -> s.startsWith("select * from ticket_category_with_currency where id =") && s.contains("tc_status")).count());
                     row.put("eventCommonSql", SQL.stream().filter(s -> s.startsWith("select count(*) from ticket_category_with_currency") && s.contains("bounded = false")).count());
-                    var snapshot = Path.of("src/test/resources/benchmark/issue35/" + f.tickets + "-" + f.categoryCount + ".json");
-                    // 예약/티켓 UUID를 fixture에서 고정했으므로 전체 JSON을 그대로 비교한다.
-                    var body = Json.OBJECT_MAPPER.readTree(response.body());
-                    if ("baseline".equals(phase)) Files.writeString(snapshot, Json.OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(body) + "\n");
-                    else assertEquals(Json.OBJECT_MAPPER.readTree(Files.readString(snapshot)), body);
+                    assertSnapshot(f.tickets + "-" + f.categoryCount, Json.OBJECT_MAPPER.readTree(response.body()), phase);
                 } else {
                     var times = new ArrayList<Double>();
                     int failures = 0;
@@ -158,7 +161,7 @@ class ReservationDetailBenchmark {
             }
         }
         if (sql) verifyPolicies(fixtures.getLast(), phase);
-        var output = Path.of("build/issue35-" + phase + "-" + System.getProperty("benchmark.mode") + ".json");
+        var output = Path.of("build/" + resultPrefix() + "-" + phase + "-" + System.getProperty("benchmark.mode") + ".json");
         Files.writeString(output, Json.OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(results));
         assertTrue(results.stream().allMatch(r -> !r.containsKey("failures") || r.get("failures").equals(0)), "실패 요청 원인 확인 필요");
     }
@@ -167,12 +170,13 @@ class ReservationDetailBenchmark {
         var now = ZonedDateTime.now(clock.getClock());
         var mods = new ArrayList<TicketCategoryModification>();
         for (int i = 0; i < categoryCount; i++) {
-            mods.add(new TicketCategoryModification(null, "category-" + i, TicketCategory.TicketAccessType.INHERIT, 20/categoryCount,
+            mods.add(new TicketCategoryModification(null, "category-" + i, TicketCategory.TicketAccessType.INHERIT, Math.max(20, ticketCount)/categoryCount,
                 new DateTimeModification(now.toLocalDate().minusDays(1), now.toLocalTime()),
                 new DateTimeModification(now.toLocalDate().plusDays(1), now.toLocalTime()),
                 DESCRIPTION, BigDecimal.ZERO, i % 2 == 1, "", true, null, null, null, null, null, i, null, null, AlfioMetadata.empty()));
         }
-        var event = initEvent(mods, organizations, users, events, eventRepository).getLeft();
+        var event = initEvent(mods, organizations, users, events, eventRepository, null, Event.EventFormat.IN_PERSON,
+            PriceContainer.VatStatus.INCLUDED, List.of(alfio.model.transaction.PaymentProxy.OFFLINE), Math.max(20, ticketCount)).getLeft();
         // 응답에 사용되는 시간/UUID를 고정하고 구매 제한을 거치지 않는 합성 예약을 만든다.
         String reservation = UUID.nameUUIDFromBytes(("issue35-"+ticketCount+"-"+categoryCount).getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
         reservations.createNewReservation(reservation, now, java.util.Date.from(Instant.parse("2026-10-17T10:00:00Z")), null, "en", event.getId(), BigDecimal.ONE, true, "CHF", event.getOrganizationId(), null);
@@ -257,10 +261,38 @@ class ReservationDetailBenchmark {
         assertThrows(alfio.controller.api.v2.user.support.ReservationAccessDenied.class, () -> controller.getReservationInfo(f.reservation, null));
         assertThrows(alfio.controller.api.v2.user.support.ReservationAccessDenied.class, () -> controller.getReservationInfo(f.reservation, () -> "unknown-synthetic-user"));
         assertEquals(200, controller.getReservationInfo(f.reservation, () -> ownerName).getStatusCode().value());
-        var path = Path.of("src/test/resources/benchmark/issue35/policies.json");
-        var tree = Json.OBJECT_MAPPER.valueToTree(snapshots);
-        if ("baseline".equals(phase)) Files.writeString(path, Json.OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(tree)+"\n");
-        else assertEquals(Json.OBJECT_MAPPER.readTree(Files.readString(path)), tree);
+        assertSnapshot("policies", Json.OBJECT_MAPPER.valueToTree(snapshots), phase);
+    }
+
+    void assertSnapshot(String name, JsonNode body, String phase) throws Exception {
+        if (largeSuite()) {
+            // 전체 응답을 키 순서와 무관하게 비교하며 대량 응답 원문은 커밋하지 않는다.
+            byte[] canonical = Json.OBJECT_MAPPER.writeValueAsBytes(canonicalValue(body));
+            String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(canonical));
+            var path = Path.of("src/test/resources/benchmark/issue35-large/" + name + ".sha256");
+            if ("baseline".equals(phase)) {
+                Files.createDirectories(path.getParent());
+                Files.writeString(path, digest + "\n");
+            } else assertEquals(Files.readString(path).trim(), digest, "전체 응답: " + name);
+        } else {
+            var path = Path.of("src/test/resources/benchmark/issue35/" + name + ".json");
+            if ("baseline".equals(phase)) Files.writeString(path, Json.OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(body) + "\n");
+            else assertEquals(Json.OBJECT_MAPPER.readTree(Files.readString(path)), body);
+        }
+    }
+
+    static Object canonicalValue(JsonNode node) {
+        if (node.isObject()) {
+            var values = new TreeMap<String, Object>();
+            node.properties().forEach(entry -> values.put(entry.getKey(), canonicalValue(entry.getValue())));
+            return values;
+        }
+        if (node.isArray()) {
+            var values = new ArrayList<Object>();
+            node.forEach(value -> values.add(canonicalValue(value)));
+            return values;
+        }
+        return node;
     }
 
     void checkPolicy(Fixture f, String name, java.util.function.IntPredicate cancellation, Map<String, Object> snapshots) {
