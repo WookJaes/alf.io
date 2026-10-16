@@ -1,0 +1,167 @@
+{
+  "id" : "3db2b466-17d2-3a36-b5fd-a214a158ccfe",
+  "shortId" : "3DB2B466",
+  "firstName" : null,
+  "lastName" : null,
+  "email" : null,
+  "validity" : 1792231200000,
+  "ticketsByCategory" : [ {
+    "name" : "category-0",
+    "ticketAccessType" : "INHERIT",
+    "tickets" : [ {
+      "uuid" : "08786da0-09ce-387b-b3e9-3253771c34fe",
+      "firstName" : null,
+      "lastName" : null,
+      "email" : "",
+      "fullName" : "",
+      "userLanguage" : "en",
+      "assigned" : false,
+      "locked" : false,
+      "acquired" : true,
+      "cancellationEnabled" : true,
+      "sendMailEnabled" : true,
+      "downloadEnabled" : true,
+      "formattedOnlineCheckInDate" : { },
+      "onlineEventStarted" : false,
+      "ticketFieldConfigurationAfterStandard" : [ ],
+      "ticketFieldConfigurationBeforeStandard" : [ ]
+    }, {
+      "uuid" : "388cfb45-e89e-3f68-97c6-d54cb38ce809",
+      "firstName" : null,
+      "lastName" : null,
+      "email" : "",
+      "fullName" : "",
+      "userLanguage" : "en",
+      "assigned" : false,
+      "locked" : false,
+      "acquired" : true,
+      "cancellationEnabled" : true,
+      "sendMailEnabled" : true,
+      "downloadEnabled" : true,
+      "formattedOnlineCheckInDate" : { },
+      "onlineEventStarted" : false,
+      "ticketFieldConfigurationAfterStandard" : [ ],
+      "ticketFieldConfigurationBeforeStandard" : [ ]
+    }, {
+      "uuid" : "6829a498-762a-355b-a9d9-24a94ad63bbd",
+      "firstName" : null,
+      "lastName" : null,
+      "email" : "",
+      "fullName" : "",
+      "userLanguage" : "en",
+      "assigned" : false,
+      "locked" : false,
+      "acquired" : true,
+      "cancellationEnabled" : true,
+      "sendMailEnabled" : true,
+      "downloadEnabled" : true,
+      "formattedOnlineCheckInDate" : { },
+      "onlineEventStarted" : false,
+      "ticketFieldConfigurationAfterStandard" : [ ],
+      "ticketFieldConfigurationBeforeStandard" : [ ]
+    }, {
+      "uuid" : "a77c056e-a29d-3a89-a4a0-f04badb378af",
+      "firstName" : null,
+      "lastName" : null,
+      "email" : "",
+      "fullName" : "",
+      "userLanguage" : "en",
+      "assigned" : false,
+      "locked" : false,
+      "acquired" : true,
+      "cancellationEnabled" : true,
+      "sendMailEnabled" : true,
+      "downloadEnabled" : true,
+      "formattedOnlineCheckInDate" : { },
+      "onlineEventStarted" : false,
+      "ticketFieldConfigurationAfterStandard" : [ ],
+      "ticketFieldConfigurationBeforeStandard" : [ ]
+    }, {
+      "uuid" : "c8eb2e3a-d184-3f71-912c-ea2c5ee8ed82",
+      "firstName" : null,
+      "lastName" : null,
+      "email" : "",
+      "fullName" : "",
+      "userLanguage" : "en",
+      "assigned" : false,
+      "locked" : false,
+      "acquired" : true,
+      "cancellationEnabled" : true,
+      "sendMailEnabled" : true,
+      "downloadEnabled" : true,
+      "formattedOnlineCheckInDate" : { },
+      "onlineEventStarted" : false,
+      "ticketFieldConfigurationAfterStandard" : [ ],
+      "ticketFieldConfigurationBeforeStandard" : [ ]
+    } ]
+  } ],
+  "orderSummary" : {
+    "descriptionForPayment" : "5 x category-0",
+    "displayVat" : true,
+    "free" : true,
+    "notYetPaid" : false,
+    "priceInCents" : 0,
+    "summary" : [ {
+      "name" : "category-0",
+      "amount" : 5,
+      "price" : "0",
+      "subTotal" : "0",
+      "type" : "TICKET",
+      "taxPercentage" : null
+    } ],
+    "totalPrice" : "0",
+    "totalVAT" : "0",
+    "vatPercentage" : "1.00"
+  },
+  "status" : "COMPLETE",
+  "validatedBookingInformation" : false,
+  "formattedExpirationDate" : {
+    "de" : "17.10.2026 12:00",
+    "en" : "17/10/2026 12:00",
+    "it" : "17/10/2026 12:00"
+  },
+  "invoiceNumber" : null,
+  "invoiceRequested" : false,
+  "invoiceOrReceiptDocumentPresent" : false,
+  "paid" : true,
+  "tokenAcquired" : false,
+  "paymentProxy" : null,
+  "addCompanyBillingDetails" : null,
+  "customerReference" : null,
+  "skipVatNr" : null,
+  "billingAddress" : null,
+  "billingDetails" : {
+    "companyName" : null,
+    "addressLine1" : null,
+    "addressLine2" : null,
+    "zip" : null,
+    "city" : null,
+    "state" : null,
+    "country" : null,
+    "taxId" : null,
+    "invoicingAdditionalInfo" : {
+      "italianEInvoicing" : null,
+      "empty" : true
+    },
+    "hasTaxId" : false
+  },
+  "containsCategoriesLinkedToGroups" : false,
+  "activePaymentMethods" : {
+    "BANK_TRANSFER" : {
+      "paymentProxy" : "OFFLINE",
+      "parameters" : {
+        "delayForOfflinePayment" : 5,
+        "captchaRequestedForOffline" : false
+      }
+    }
+  },
+  "subscriptionInfos" : null,
+  "metadata" : {
+    "hideContactData" : false,
+    "readyForConfirmation" : false,
+    "finalized" : false,
+    "hideConfirmationButtons" : false,
+    "lockEmailEdit" : false
+  },
+  "additionalServiceWithData" : [ ]
+}

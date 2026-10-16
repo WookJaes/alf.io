@@ -1,0 +1,10 @@
+allprojects {
+    tasks.withType(org.gradle.api.tasks.testing.Test).configureEach {
+        minHeapSize = '512m'
+        maxHeapSize = '512m'
+        maxParallelForks = 1
+        jvmArgs '-XX:+UseG1GC', '-XX:ActiveProcessorCount=4'
+        extensions.findByType(org.gradle.testing.jacoco.plugins.JacocoTaskExtension)?.enabled = false
+        reports.junitXml.outputLocation = file(System.getProperty('benchmark.reportDir', 'build/issue35-results'))
+    }
+}

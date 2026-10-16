@@ -17,8 +17,11 @@
 package alfio.manager.support;
 
 import alfio.model.Ticket;
+import alfio.model.TicketCategory;
 import alfio.repository.TicketCategoryRepository;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.function.Function;
 
 public final class CategoryEvaluator {
@@ -26,8 +29,15 @@ public final class CategoryEvaluator {
     }
 
     public static Function<Ticket, Boolean> ticketCancellationAvailabilityChecker(TicketCategoryRepository ticketCategoryRepository) {
-        return ticket -> ticket.getStatus() == Ticket.TicketStatus.ACQUIRED && (!ticketCategoryRepository.getByIdAndActive(ticket.getCategoryId(), ticket.getEventId()).isAccessRestricted()
-                         || ticketCategoryRepository.countUnboundedCategoriesByEventId(ticket.getEventId()) > 0);
+        // Keep this evaluator local to one request; ticket state is still evaluated for every ticket.
+        Map<Integer, Map<Integer, TicketCategory>> categoriesByEvent = new HashMap<>();
+        Map<Integer, Boolean> unboundedCategoriesByEvent = new HashMap<>();
+        return ticket -> ticket.getStatus() == Ticket.TicketStatus.ACQUIRED &&
+            (!categoriesByEvent.computeIfAbsent(ticket.getEventId(), ignored -> new HashMap<>())
+                .computeIfAbsent(ticket.getCategoryId(), categoryId -> ticketCategoryRepository.getByIdAndActive(categoryId, ticket.getEventId()))
+                .isAccessRestricted()
+                || unboundedCategoriesByEvent.computeIfAbsent(ticket.getEventId(), eventId ->
+                    ticketCategoryRepository.countUnboundedCategoriesByEventId(eventId) > 0));
     }
 
     public static boolean isTicketCancellationAvailable(TicketCategoryRepository ticketCategoryRepository, Ticket ticket) {

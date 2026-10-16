@@ -160,14 +160,16 @@ public class ReservationApiV2Controller {
                     var ticketsByCategory = tickets.stream().collect(Collectors.groupingBy(Ticket::getCategoryId));
                     var hasPaidSupplement = ticketReservationManager.hasPaidSupplements(event.getId(), reservationId);
                     var categories = ticketCategoryRepository.findCategoriesInReservation(reservationId);
+                    var context = event.supportsLinkedAdditionalServices() ? EnumSet.of(PurchaseContextFieldConfiguration.Context.ATTENDEE) : EVENT_RELATED_CONTEXTS;
+                    var ticketMapper = bookingInfoTicketLoader.bookingInfoTicketMapper(hasPaidSupplement, event, ticketFieldsFilterer,
+                        descriptionsByFieldId, valuesByTicketIds, Map.of(), false, context);
                     ticketsInReservation = ticketsByCategory
                         .entrySet()
                         .stream()
                         .map(e -> {
                             var tc = categories.stream().filter(t -> t.getId() == e.getKey()).findFirst().orElseThrow();
-                            var context = event.supportsLinkedAdditionalServices() ? EnumSet.of(PurchaseContextFieldConfiguration.Context.ATTENDEE) : EVENT_RELATED_CONTEXTS;
                             var ts = e.getValue().stream()
-                                .map(t -> bookingInfoTicketLoader.toBookingInfoTicket(t, hasPaidSupplement, event, ticketFieldsFilterer, descriptionsByFieldId, valuesByTicketIds, Map.of(), false, context))
+                                .map(ticketMapper)
                                 .collect(Collectors.toList());
                             return new TicketsByTicketCategory(tc.getName(), tc.getTicketAccessType(), ts);
                         })

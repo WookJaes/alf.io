@@ -25,6 +25,7 @@ import alfio.manager.system.ConfigurationLevel;
 import alfio.manager.system.ConfigurationManager;
 import alfio.model.*;
 import alfio.model.subscription.SubscriptionDescriptor;
+import alfio.model.system.ConfigurationKeys;
 import alfio.repository.AdditionalServiceItemRepository;
 import alfio.util.ClockProvider;
 import alfio.util.EventUtil;
@@ -33,6 +34,7 @@ import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -90,22 +92,39 @@ public class BookingInfoTicketLoader {
                                                  Map<String, String> formattedOnlineCheckInDate,
                                                  boolean onlineEventStarted,
                                                  Set<PurchaseContextFieldConfiguration.Context> contexts) {
-        // TODO: n+1, should be cleaned up! see TicketDecorator.getCancellationEnabled
-        var configuration = configurationManager.getFor(EnumSet.of(ALLOW_FREE_TICKETS_CANCELLATION, SEND_TICKETS_AUTOMATICALLY, ALLOW_TICKET_DOWNLOAD), ConfigurationLevel.ticketCategory(event, t.getCategoryId()));
-        boolean cancellationEnabled = t.getFinalPriceCts() == 0 &&
-            !event.expired() &&
-            (!hasPaidSupplement && configuration.get(ALLOW_FREE_TICKETS_CANCELLATION).getValueAsBooleanOrDefault()) && // freeCancellationEnabled
-            eventManager.checkTicketCancellationPrerequisites().apply(t); // cancellationPrerequisitesMet
-        //
-        return toBookingInfoTicket(t,
-            cancellationEnabled,
-            configuration.get(SEND_TICKETS_AUTOMATICALLY).getValueAsBooleanOrDefault(),
-            configuration.get(ALLOW_TICKET_DOWNLOAD).getValueAsBooleanOrDefault(),
-            additionalFieldsFilterer.getFieldsForTicket(t.getPublicUuid(), contexts),
-            descriptionsByTicketFieldId,
-            valuesByTicketIds.getOrDefault(t.getId(), Collections.emptyList()),
-            formattedOnlineCheckInDate,
-            onlineEventStarted);
+        return bookingInfoTicketMapper(hasPaidSupplement, event, additionalFieldsFilterer, descriptionsByTicketFieldId,
+            valuesByTicketIds, formattedOnlineCheckInDate, onlineEventStarted, contexts).apply(t);
+    }
+
+    /** Creates a mapper for one request. Category settings and cancellation data are loaded lazily. */
+    public Function<Ticket, BookingInfoTicket> bookingInfoTicketMapper(boolean hasPaidSupplement,
+                                                                       Event event,
+                                                                       Validator.AdditionalFieldsFilterer additionalFieldsFilterer,
+                                                                       Map<Long, List<PurchaseContextFieldDescription>> descriptionsByTicketFieldId,
+                                                                       Map<Integer, List<PurchaseContextFieldValue>> valuesByTicketIds,
+                                                                       Map<String, String> formattedOnlineCheckInDate,
+                                                                       boolean onlineEventStarted,
+                                                                       Set<PurchaseContextFieldConfiguration.Context> contexts) {
+        var keys = EnumSet.of(ALLOW_FREE_TICKETS_CANCELLATION, SEND_TICKETS_AUTOMATICALLY, ALLOW_TICKET_DOWNLOAD);
+        var configurations = new HashMap<Integer, Map<ConfigurationKeys, ConfigurationManager.MaybeConfiguration>>();
+        var cancellationPrerequisites = eventManager.checkTicketCancellationPrerequisites();
+        return ticket -> {
+            var configuration = configurations.computeIfAbsent(ticket.getCategoryId(), categoryId ->
+                configurationManager.getFor(keys, ConfigurationLevel.ticketCategory(event, categoryId)));
+            boolean cancellationEnabled = ticket.getFinalPriceCts() == 0 &&
+                !event.expired() &&
+                (!hasPaidSupplement && configuration.get(ALLOW_FREE_TICKETS_CANCELLATION).getValueAsBooleanOrDefault()) &&
+                cancellationPrerequisites.apply(ticket);
+            return toBookingInfoTicket(ticket,
+                cancellationEnabled,
+                configuration.get(SEND_TICKETS_AUTOMATICALLY).getValueAsBooleanOrDefault(),
+                configuration.get(ALLOW_TICKET_DOWNLOAD).getValueAsBooleanOrDefault(),
+                additionalFieldsFilterer.getFieldsForTicket(ticket.getPublicUuid(), contexts),
+                descriptionsByTicketFieldId,
+                valuesByTicketIds.getOrDefault(ticket.getId(), Collections.emptyList()),
+                formattedOnlineCheckInDate,
+                onlineEventStarted);
+        };
     }
 
     public Validator.AdditionalFieldsFilterer getSubscriptionFieldsFilterer(String reservationId, SubscriptionDescriptor descriptor) {

@@ -127,6 +127,20 @@ public class IntegrationTestUtil {
                                                 Event.EventFormat eventFormat,
                                                 PriceContainer.VatStatus eventVatStatus,
                                                 List<PaymentProxy> acceptedPaymentProxies) {
+        return initEvent(categories, organizationRepository, userManager, eventManager, eventRepository,
+            additionalServices, eventFormat, eventVatStatus, acceptedPaymentProxies, AVAILABLE_SEATS);
+    }
+
+    public static Pair<Event, String> initEvent(List<TicketCategoryModification> categories,
+                                               OrganizationRepository organizationRepository,
+                                               UserManager userManager,
+                                               EventManager eventManager,
+                                               EventRepository eventRepository,
+                                               List<EventModification.AdditionalService> additionalServices,
+                                               Event.EventFormat eventFormat,
+                                               PriceContainer.VatStatus eventVatStatus,
+                                               List<PaymentProxy> acceptedPaymentProxies,
+                                               int availableSeats) {
         String organizationName = UUID.randomUUID().toString();
         String username = UUID.randomUUID().toString();
         String eventName = UUID.randomUUID().toString();
@@ -149,10 +163,10 @@ public class IntegrationTestUtil {
             "muh location", "0.0", "0.0", ClockProvider.clock().getZone().getId(), desc,
             new DateTimeModification(LocalDate.now(ClockProvider.clock()).plusDays(5), LocalTime.now(ClockProvider.clock())),
             new DateTimeModification(expiration.toLocalDate(), expiration.toLocalTime()),
-            BigDecimal.TEN, "CHF", AVAILABLE_SEATS, BigDecimal.ONE, PriceContainer.VatStatus.isVatIncluded(eventVatStatus), acceptedPaymentProxies, categories, false, new LocationDescriptor("","","",""), 7, null, additionalServices, AlfioMetadata.empty(), List.of());
+            BigDecimal.TEN, "CHF", availableSeats, BigDecimal.ONE, PriceContainer.VatStatus.isVatIncluded(eventVatStatus), acceptedPaymentProxies, categories, false, new LocationDescriptor("","","",""), 7, null, additionalServices, AlfioMetadata.empty(), List.of());
         eventManager.createEvent(em, username);
         Event event = eventManager.getSingleEvent(eventName, username);
-        Assertions.assertEquals(AVAILABLE_SEATS, eventRepository.countExistingTickets(event.getId()).intValue());
+        Assertions.assertEquals(availableSeats, eventRepository.countExistingTickets(event.getId()).intValue());
         Assertions.assertTrue(event.mustUseFirstAndLastName());
         Assertions.assertTrue(event.supportsQRCodeCaseInsensitive());
         Assertions.assertTrue(event.supportsLinkedAdditionalServices());

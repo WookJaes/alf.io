@@ -1,0 +1,99 @@
+{
+  "id" : "cced72a4-c13a-3c3b-8d64-b1c3d3017171",
+  "shortId" : "CCED72A4",
+  "firstName" : null,
+  "lastName" : null,
+  "email" : null,
+  "validity" : 1792231200000,
+  "ticketsByCategory" : [ {
+    "name" : "category-0",
+    "ticketAccessType" : "INHERIT",
+    "tickets" : [ {
+      "uuid" : "fcfd4172-6e2b-375b-b6b2-605f26ed1c56",
+      "firstName" : null,
+      "lastName" : null,
+      "email" : "",
+      "fullName" : "",
+      "userLanguage" : "en",
+      "assigned" : false,
+      "locked" : false,
+      "acquired" : true,
+      "cancellationEnabled" : true,
+      "sendMailEnabled" : true,
+      "downloadEnabled" : true,
+      "formattedOnlineCheckInDate" : { },
+      "onlineEventStarted" : false,
+      "ticketFieldConfigurationAfterStandard" : [ ],
+      "ticketFieldConfigurationBeforeStandard" : [ ]
+    } ]
+  } ],
+  "orderSummary" : {
+    "descriptionForPayment" : "1 x category-0",
+    "displayVat" : true,
+    "free" : true,
+    "notYetPaid" : false,
+    "priceInCents" : 0,
+    "summary" : [ {
+      "name" : "category-0",
+      "amount" : 1,
+      "price" : "0",
+      "subTotal" : "0",
+      "type" : "TICKET",
+      "taxPercentage" : null
+    } ],
+    "totalPrice" : "0",
+    "totalVAT" : "0",
+    "vatPercentage" : "1.00"
+  },
+  "status" : "COMPLETE",
+  "validatedBookingInformation" : false,
+  "formattedExpirationDate" : {
+    "de" : "17.10.2026 12:00",
+    "en" : "17/10/2026 12:00",
+    "it" : "17/10/2026 12:00"
+  },
+  "invoiceNumber" : null,
+  "invoiceRequested" : false,
+  "invoiceOrReceiptDocumentPresent" : false,
+  "paid" : true,
+  "tokenAcquired" : false,
+  "paymentProxy" : null,
+  "addCompanyBillingDetails" : null,
+  "customerReference" : null,
+  "skipVatNr" : null,
+  "billingAddress" : null,
+  "billingDetails" : {
+    "companyName" : null,
+    "addressLine1" : null,
+    "addressLine2" : null,
+    "zip" : null,
+    "city" : null,
+    "state" : null,
+    "country" : null,
+    "taxId" : null,
+    "invoicingAdditionalInfo" : {
+      "italianEInvoicing" : null,
+      "empty" : true
+    },
+    "hasTaxId" : false
+  },
+  "containsCategoriesLinkedToGroups" : false,
+  "activePaymentMethods" : {
+    "BANK_TRANSFER" : {
+      "paymentProxy" : "OFFLINE",
+      "parameters" : {
+        "delayForOfflinePayment" : 5,
+        "captchaRequestedForOffline" : false
+      }
+    }
+  },
+  "subscriptionInfos" : null,
+  "metadata" : {
+    "hideContactData" : false,
+    "readyForConfirmation" : false,
+    "finalized" : false,
+    "hideConfirmationButtons" : false,
+    "lockEmailEdit" : false
+  },
+  "additionalServiceWithData" : [ ]
+}
