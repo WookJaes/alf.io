@@ -48,6 +48,9 @@ on:
             - '!**/*.rst'
             - '!**/*.adoc'
 
+permissions:
+    contents: read
+
 jobs:
     detect_changes:
         runs-on: ubuntu-latest
