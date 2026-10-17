@@ -49,7 +49,59 @@ on:
             - '!**/*.adoc'
 
 jobs:
+    detect_changes:
+        runs-on: ubuntu-latest
+        outputs:
+            frontend: ${{ steps.changes.outputs.frontend }}
+            backend: ${{ steps.changes.outputs.backend }}
+            full: ${{ steps.changes.outputs.full }}
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  fetch-depth: 0
+            - name: Select validation scope
+              id: changes
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+                    base="${{ github.event.pull_request.base.sha }}"
+                  else
+                    base="${{ github.event.before }}"
+                    if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+                      base="$(git rev-list --max-parents=1 HEAD)"
+                    fi
+                  fi
+
+                  frontend=false
+                  backend=false
+                  common=false
+                  while IFS= read -r path; do
+                    case "$path" in
+                      frontend/*)
+                        frontend=true
+                        ;;
+                      build.gradle*|settings.gradle*|gradle.properties|gradle/*|buildSrc/*|build-logic/*|config/*|lib_exclude|lombok.config|gradlew|gradlew.bat|src/main/dist/*|.github/workflows/*|.github/actions/*)
+                        common=true
+                        ;;
+                      src/*)
+                        backend=true
+                        ;;
+                    esac
+                  done < <(git diff --name-only "$base" "$GITHUB_SHA")
+
+                  full=false
+                  if [[ "$common" == true || ( "$frontend" == true && "$backend" == true ) || "${{ github.event_name }}" == "push" || "${{ github.ref_type }}" == "tag" ]]; then
+                    full=true
+                  fi
+
+                  echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
+                  echo "backend=$backend" >> "$GITHUB_OUTPUT"
+                  echo "full=$full" >> "$GITHUB_OUTPUT"
+                  echo "Selected validation: frontend=$frontend backend=$backend full=$full"
     build:
+        if: ${{ needs.detect_changes.outputs.full == 'true' }}
+        needs: detect_changes
         runs-on: ubuntu-latest
         strategy:
             matrix:
@@ -81,6 +133,34 @@ jobs:
                   name: dist
                   path: build
                   retention-days: 5
+    frontend_check:
+        if: ${{ needs.detect_changes.outputs.frontend == 'true' && needs.detect_changes.outputs.full != 'true' }}
+        needs: detect_changes
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+            - name: Set up JDK
+              uses: actions/setup-java@v6
+              with:
+                  java-version: 25
+                  distribution: temurin
+                  cache: gradle
+            - name: Check frontends
+              run: ./gradlew frontendCheck
+    backend_check:
+        if: ${{ needs.detect_changes.outputs.backend == 'true' && needs.detect_changes.outputs.full != 'true' }}
+        needs: detect_changes
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+            - name: Set up JDK
+              uses: actions/setup-java@v6
+              with:
+                  java-version: 25
+                  distribution: temurin
+                  cache: gradle
+            - name: Check backend
+              run: ./gradlew backendCheck
     push_image_dev:
         runs-on: ubuntu-latest
         if: ${{ github.repository == 'alfio-event/alf.io' && github.event_name == 'push' }}
