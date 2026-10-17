@@ -56,6 +56,14 @@
 
 CI는 PR에서 공개 프론트엔드만 변경되면 `frontendCheck`, 백엔드만 변경되면 `backendCheck`, 양쪽·공통 설정 변경이면 전체 matrix build를 선택한다. `main` push와 release tag는 기존 Docker image artifact 생성을 보존하기 위해 전체 build를 선택한다.
 
+### 실제 개발 서버 기동 확인
+
+- `env GRADLE_USER_HOME=/private/tmp/alfio-gradle-before ./gradlew --no-daemon --console=plain frontendPublicDev`: 성공. Angular Live Development Server가 `http://localhost:4200/`에서 기동하고 컴파일 성공 로그를 확인한 뒤 종료했다.
+- `env GRADLE_USER_HOME=/private/tmp/alfio-gradle-before ./gradlew --no-daemon --console=plain frontendAdminDev`: 성공. Vite가 `http://localhost:5173/`에서 ready 상태가 된 것을 확인한 뒤 종료했다.
+- `env GRADLE_USER_HOME=/private/tmp/alfio-gradle-before ./gradlew --no-daemon --console=plain -Pprofile=dev bootRun`: 실패. 기존 `bootRun`이 공개 프론트엔드 준비와 관리자 Vite 기동까지 진행했지만, 애플리케이션 초기화 중 현재 PostgreSQL의 사용자 인증이 실패해 종료됐다. `killViteDevServer`가 실행되어 Vite 프로세스는 정리됐다.
+
+따라서 프론트엔드 독립 dev server의 실제 기동은 검증했으며, `bootRun`의 전체 런타임 성공은 현재 DB 인증 정보 불일치로 검증하지 못했다.
+
 배포 산출물도 확인했다. `build/libs/alfio-2.0-M6-SNAPSHOT-boot.jar`는 97,338,799 bytes였고, `BOOT-INF/classes/resources/alfio-public-frontend/` 12개 및 `BOOT-INF/classes/resources/alfio-admin-frontend/` 2,059개 항목과 공개 index 변환 파일 1개를 포함했다. `build/dockerize/Dockerfile`과 `build/dockerize/alfio-boot.jar`도 생성됐다.
 
 Docker daemon은 현재 소켓 권한 오류(`permission denied ... docker.sock`)로 실제 `docker build`를 실행하지 못했다. 따라서 Docker 이미지 빌드 성공은 확인하지 않았고, Gradle이 생성한 Docker context와 JAR만 확인했다.
