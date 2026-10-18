@@ -29,6 +29,7 @@ import alfio.util.JsonViews;
 import com.fasterxml.jackson.annotation.JsonView;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.Errors;
 import org.springframework.web.bind.annotation.*;
 
@@ -60,6 +61,11 @@ public class AdditionalFieldApiController {
         this.purchaseContextFieldManager = purchaseContextFieldManager;
         this.accessService = accessService;
         this.dynamicFieldTemplateRepository = dynamicFieldTemplateRepository;
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<String> handleBadRequest(IllegalArgumentException exception) {
+        return ResponseEntity.badRequest().body(exception.getMessage());
     }
 
     @GetMapping("/templates")
