@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build --mode production",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:reconciliation": "node --test test/reconciliation.test.mjs"
   },
   "dependencies": {
     "@lit/context": "1.1.6",
@@ -20,6 +21,7 @@
     "@types/papaparse": "^5.5.2",
     "typescript": "5.9.3",
     "vite": "7.3.0",
-    "vite-plugin-static-copy": "3.1.4"
+    "vite-plugin-static-copy": "3.1.4",
+    "playwright": "1.62.1"
   }
 }
