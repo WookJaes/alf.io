@@ -84,7 +84,7 @@ jobs:
                       frontend/*)
                         frontend=true
                         ;;
-                      build.gradle*|settings.gradle*|gradle.properties|gradle/*|buildSrc/*|build-logic/*|config/*|lib_exclude|lombok.config|gradlew|gradlew.bat|src/main/dist/*|.github/workflows/*|.github/actions/*)
+                      build.gradle*|settings.gradle*|gradle.properties|gradle/*|buildSrc/*|build-logic/*|config/*|lib_exclude|lombok.config|gradlew|gradlew.bat|src/main/dist/*|.github/workflows/*|.github/actions/*|.codecov.yml|codecov.yml)
                         common=true
                         ;;
                       src/*)
