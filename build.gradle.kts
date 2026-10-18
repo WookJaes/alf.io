@@ -93,6 +93,7 @@ tasks.register("validate") {
 }
 
 val profile = project.findProperty("profile")?.toString() ?: "dev"
+val frontendDevEnabled = project.findProperty("frontendDev")?.toString()?.toBoolean() ?: true
 
 // default settings
 var datasourceUrl = "jdbc:postgresql://localhost:5432/alfio"
@@ -350,8 +351,13 @@ springBoot {
 }
 
 tasks.bootRun {
-    dependsOn("copyFrontendDev", "frontendAdminPnpmInstall")
-    finalizedBy("killViteDevServer")
+    if (frontendDevEnabled) {
+        dependsOn("copyFrontendDev", "frontendAdminPnpmInstall")
+        finalizedBy("killViteDevServer")
+        classpath(layout.buildDirectory.dir("index-transformed"), layout.buildDirectory.dir("frontend-dev"))
+    } else {
+        logger.lifecycle("Frontend development servers are disabled. Use -PfrontendDev=true to restore bootRun's default frontend flow.")
+    }
     val externalConfig = File("./custom.jvmargs")
     val opts = mutableListOf(
         "-Dspring.profiles.active=$springProfilesActive",
@@ -365,9 +371,8 @@ tasks.bootRun {
         opts += externalConfig.readLines()
     }
     jvmArgs = opts
-    classpath(layout.buildDirectory.dir("index-transformed"), layout.buildDirectory.dir("frontend-dev"))
 
-    doFirst {
+    if (frontendDevEnabled) doFirst {
         logger.lifecycle("Starting Vite dev server in frontend/admin ...")
         val viteDir = file("${project.projectDir}/frontend/admin")
         // node.pnpmCommand is a bare command name, which ProcessBuilder can only resolve through the
@@ -458,6 +463,8 @@ val frontendBuild = tasks.register<PnpmTask>("frontendBuild") {
     dependsOn(frontendPnpmInstall)
     args = listOf("--prefix", "${project.projectDir}/frontend/public", "run", "build")
     outputs.dir("${project.projectDir}/frontend/public/dist")
+    inputs.dir("${project.projectDir}/frontend/public/src")
+    inputs.files("frontend/public/angular.json", "frontend/public/package.json", "frontend/public/pnpm-lock.yaml")
 }
 
 val frontendAdminPnpmInstall = tasks.register<PnpmTask>("frontendAdminPnpmInstall") {
@@ -475,6 +482,50 @@ val frontendAdminBuild = tasks.register<PnpmTask>("frontendAdminBuild") {
     inputs.files("frontend/admin/tsconfig.json", "frontend/admin/vite.config.js",
         "frontend/admin/package.json", "frontend/admin/pnpm-lock.yaml")
     outputs.dir("${project.projectDir}/frontend/admin/dist")
+}
+
+tasks.register("frontendPublicBuild") {
+    group = FRONTEND_GROUP
+    description = "Builds the public Angular frontend independently."
+    dependsOn(frontendBuild)
+}
+
+tasks.register<PnpmTask>("frontendPublicDev") {
+    group = FRONTEND_GROUP
+    description = "Runs the public Angular frontend development server on port 4200."
+    dependsOn(frontendPnpmInstall)
+    args = listOf("--prefix", "${project.projectDir}/frontend/public", "run", "start")
+}
+
+tasks.register<PnpmTask>("frontendAdminDev") {
+    group = FRONTEND_GROUP
+    description = "Runs the admin Lit/Vite frontend development server on port 5173."
+    dependsOn(frontendAdminPnpmInstall)
+    args = listOf("--prefix", "${project.projectDir}/frontend/admin", "run", "dev")
+}
+
+tasks.register("frontendBuildAll") {
+    group = FRONTEND_GROUP
+    description = "Builds both the public Angular and admin Lit/Vite frontends."
+    dependsOn(frontendBuild, frontendAdminBuild)
+}
+
+tasks.register("frontendCheck") {
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    description = "Builds both frontends without compiling or testing the backend."
+    dependsOn("frontendBuildAll")
+}
+
+tasks.register("backendBuild") {
+    group = BasePlugin.BUILD_GROUP
+    description = "Compiles the backend without building either frontend."
+    dependsOn("classes")
+}
+
+tasks.register("backendCheck") {
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    description = "Compiles and tests the backend without building either frontend."
+    dependsOn("backendBuild", "test")
 }
 
 tasks.clean {
@@ -508,7 +559,13 @@ tasks.register<Copy>("distribution") {
     from(project.layout.buildDirectory.file("libs/alfio-${project.version}-boot.jar"))
     rename { "alfio-boot.jar" }
     into(layout.buildDirectory.dir("dockerize"))
-    dependsOn(publicFrontendIndexTransform, tasks.build, tasks.named("dockerize"))
+    dependsOn("frontendBuildAll", publicFrontendIndexTransform, tasks.build, tasks.named("dockerize"))
+}
+
+tasks.register("fullBuild") {
+    group = DISTRIBUTION_GROUP
+    description = "Builds and tests the backend, packages both frontends into the boot JAR, and prepares Docker output."
+    dependsOn("distribution")
 }
 
 tasks.register<Copy>("clever") {
@@ -517,7 +574,7 @@ tasks.register<Copy>("clever") {
     from(project.layout.buildDirectory.file("libs/alfio-${project.version}-boot.jar"))
     rename { "alfio-boot.jar" }
     into(project.layout.buildDirectory.dir("clevercloud"))
-    dependsOn(publicFrontendIndexTransform/*, adminFrontendIndexTransform*/, tasks.build)
+    dependsOn(publicFrontendIndexTransform, frontendAdminBuild, tasks.build)
 }
 
 release {
@@ -530,7 +587,7 @@ release {
 }
 
 tasks.bootJar {
-    dependsOn(publicFrontendIndexTransform)//, adminFrontendIndexTransform)
+    dependsOn(publicFrontendIndexTransform, frontendAdminBuild)
     archiveClassifier.set("boot")
     from(frontendBuild) {
         into("BOOT-INF/classes/resources/")

@@ -69,6 +69,40 @@ the project. Simply execute the wrapper along with the appropriate task, for exa
 ./gradlew clean
 ```
 
+#### Selective build and development paths
+
+The frontends and backend are still packaged into the same Spring Boot JAR, while development and validation tasks can run independently.
+
+| Purpose | Command |
+|---|---|
+| Build the public Angular frontend | `./gradlew frontendPublicBuild` |
+| Build the admin Lit/Vite frontend | `./gradlew frontendAdminBuild` |
+| Build and check both frontends | `./gradlew frontendCheck` |
+| Compile the backend only | `./gradlew backendBuild` |
+| Compile and test the backend only | `./gradlew backendCheck` |
+| Build both frontends and the backend for distribution | `./gradlew fullBuild` |
+| Existing distribution task | `./gradlew distribution` |
+
+Development servers can also be run independently. The existing `bootRun` flow remains available by default.
+
+```bash
+# Run the backend only
+./gradlew -PfrontendDev=false bootRun
+
+# Run the public Angular development server (http://localhost:4200)
+./gradlew frontendPublicDev
+
+# Run the admin Lit/Vite development server (http://localhost:5173)
+./gradlew frontendAdminDev
+
+# Existing integrated development flow (backend on 8080 + admin Vite)
+./gradlew bootRun
+```
+
+`frontendPublicDev` proxies API requests to `localhost:8080`, so the backend must be running when developing the public frontend independently. As before, `distribution` packages both frontend outputs into the single `alfio-boot.jar` and creates the Docker context.
+
+Using Java 25.0.4.1, Gradle 9.7.1, and pnpm 11.25.0, the measured times improved as follows: full distribution build from 213 to 158 seconds, public Angular build from 13 to 11 seconds, admin Lit/Vite build from 8 to 7 seconds, and backend compile/test from 141 to 138 seconds. The commands and detailed results are recorded in [`docs/harness/records/2026-10-17-issue-39-build-validation.md`](docs/harness/records/2026-10-17-issue-39-build-validation.md).
+
 #### Running with multiple profiles
 
 You must specify a project property at the command line, such as
@@ -259,4 +293,3 @@ Support this project with your organization. Your logo will show up here with a 
 <a href="https://opencollective.com/alfio/organization/0/website"><img src="https://images.opencollective.com/spring_io/01a0fe1/logo.png" height="100"></a> &nbsp;
 <a href="https://opencollective.com/alfio/organization/1/website"><img src="https://images.opencollective.com/salesforce/ca8f997/logo/256.png" height="100"></a> &nbsp;
 <a href="https://opencollective.com/alfio/organization/2/website"><img src="https://opencollective.com/alfio/organization/2/avatar.svg"></a>
-
