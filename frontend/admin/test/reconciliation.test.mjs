@@ -1,14 +1,11 @@
 import {after, before, test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
 import {mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {createServer} from 'vite';
+import {chromium} from 'playwright';
 
-// 기존 Playwright 설치를 사용한다. 저장소 의존성이나 브라우저를 설치하지 않는다.
-const require = createRequire(import.meta.url);
-const {chromium} = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
 const root = fileURLToPath(new URL('../', import.meta.url));
 const header = id => ({comparisonId: id, comparedAt: '2026-10-18T00:00:00Z', expiresAt: '2026-10-19T00:00:00Z',
     aiAvailable: true, summary: {csvRows: 3, csvTickets: 3, systemTickets: 3, matchedTickets: 1,
@@ -21,8 +18,8 @@ before(async () => {
     server = await createServer({root, configFile: false, server: {host: '127.0.0.1', port: 0}});
     await server.listen();
     origin = `http://127.0.0.1:${server.httpServer.address().port}`;
-    browser = await chromium.launch({executablePath: process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true});
-    console.log(`환경: Node ${process.version}, Chrome ${browser.version()}, Vite 합성 API`);
+    browser = await chromium.launch({headless: true, ...(process.env.CHROME_PATH ? {executablePath: process.env.CHROME_PATH} : {})});
+    console.log(`환경: Node ${process.version}, Chromium ${browser.version()}, Vite 합성 API`);
 });
 after(async () => { await browser?.close(); await server?.close(); });
 

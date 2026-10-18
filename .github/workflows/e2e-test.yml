@@ -57,3 +57,27 @@ jobs:
                   cache: gradle
             - name: Validate current checkout with headless Chrome
               run: bash scripts/validation/e2e.sh
+    browser-regression:
+        name: Browser regression (${{ matrix.os }})
+        runs-on: ${{ matrix.os }}
+        timeout-minutes: 10
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [ubuntu-latest, windows-latest]
+        defaults:
+            run:
+                working-directory: frontend/admin
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: '22.22.3'
+            - name: Install pnpm
+              run: npm install --global pnpm@11.1.2
+            - name: Install locked dependencies
+              run: pnpm install --frozen-lockfile
+            - name: Install managed Chromium
+              run: pnpm exec playwright install --with-deps chromium
+            - name: Run reconciliation browser regression
+              run: pnpm run test:reconciliation

@@ -1,9 +1,11 @@
 # 이슈 41 명단 비교 화면 상태 보존
 
+> 이 문서는 최초 수정 시점의 재현·실행 기록이다. 이후 PR 42 리뷰 대응에서 브라우저 테스트의 설치·실행 방법을 표준화했다. 현재 실행 방법은 [관리자 프론트 안내](../../../frontend/admin/README.md#attendee-reconciliation-browser-regression-tests), 후속 검증 결과는 [리뷰 대응 기록](2026-10-18-pr42-browser-regression.md)을 따른다. 아래 과거 도구 경로·의존성 설명은 당시 조건을 보존한 것이다.
+
 - 작업 ID / 날짜 / 상태: issue41 / 2026-10-18 / completed (구현·검증 완료)
 - 요청·완료 기준: [이슈 41](https://github.com/WookJaes/alf.io/issues/41). 필터·페이지 실패 상태 보존, 정상 전환 초안 보존, 비교와 초안 연결 유지 및 기존 생성·편집·복사 검증.
 - 실행 모드·실제 담당: 현재 Codex 순차 구현·자체 QA·자체 리뷰. 하위 에이전트 없음.
-- 초기 Git: main, 작업 트리 깨끗함. fetch 후 HEAD와 origin/main 모두 `090d10bfafdf094128a9227ea25f687cb3577a76`. 여기서 `fix/41-reconciliation-ui-state` 생성.
+- 초기 Git: `main`, 작업 트리 깨끗함. 원격 갱신 후 최신 `origin/main`을 기준으로 `fix/41-reconciliation-ui-state`를 생성했다.
 - 범위: Lit 명단 비교 컴포넌트, 실제 Chrome 합성 응답 회귀 테스트, 실제 앱·DB E2E 확장과 본 기록. 실제 개인정보·외부 AI 호출 없음. 기존 설치 Playwright를 사용하며 새 의존성·잠금 파일 변경 없음.
 - 실행 기준: 저장소 루트. macOS arm64, Node 26.0.0, Python 3.9.6, Vite 7.3.0, 설치 Chrome.
 - 계획: 수정 전 실제 컴포넌트 정상/실패 재현 → 회귀 실패 확인 → 최소 수정 → 같은 테스트·관리자 빌드 → 자체 QA·리뷰·게이트 → 로컬 커밋.
@@ -18,7 +20,7 @@
 
 ## 새 재현 기록 (제품 수정 전)
 
-대상 제품은 main `090d10bfafdf094128a9227ea25f687cb3577a76`의 원본 컴포넌트다. 삭제된 이전 기록을 복구하거나 재사용하지 않았다. `frontend/admin/test/reconciliation.html`에서 실제 Lit 컴포넌트를 Vite로 로드하고 Chrome 155.0.8059.80에서 Playwright가 화면의 select·체크박스·버튼·textarea를 조작했다. 컴포넌트 상태나 메서드를 직접 주입하지 않았다. 두 페이지의 합성 비교와 `example.invalid` 이메일, 합성 초안 응답을 준비했다. API는 브라우저 라우팅으로 모두 대체했다.
+수정 전 재현 대상은 작업 시작 시점의 원격 `main`에 있던 원본 컴포넌트다. 삭제된 이전 기록을 복구하거나 재사용하지 않았다. `frontend/admin/test/reconciliation.html`에서 실제 Lit 컴포넌트를 Vite로 로드하고 Chrome 155.0.8059.80에서 Playwright가 화면의 select·체크박스·버튼·textarea를 조작했다. 컴포넌트 상태나 메서드를 직접 주입하지 않았다. 두 페이지의 합성 비교와 `example.invalid` 이메일, 합성 초안 응답을 준비했다. API는 브라우저 라우팅으로 모두 대체했다.
 
 실행 방법(저장소 루트, 설치된 Playwright 경로를 환경에 맞게 지정):
 
@@ -94,7 +96,7 @@ node --test frontend/admin/test/reconciliation.test.mjs
 
 | 검증 | 실제 결과 | 저장소에서 확인할 수 있는 내용 |
 |---|---|---|
-| 수정 전 Chrome 회귀 | 6건 실행, 정상 대조 1건 통과·버그 검출 5건 실패, 종료 1 | 위 수정 전 대상 커밋·실행 방법·시나리오별 관측 표 |
+| 수정 전 Chrome 회귀 | 6건 실행, 정상 대조 1건 통과·버그 검출 5건 실패, 종료 1 | 위 수정 전 대상·실행 방법·시나리오별 관측 표 |
 | 수정 후 같은 회귀 | 동일 6건 모두 통과, 종료 0 | 위 6개 시나리오의 수정 후 관측과 이번 변경에 포함한 회귀 테스트 |
 | 최종 확장 Chrome 회귀 | 실제 14건, 실패 0·오류 0·스킵 0, 종료 0 | [회귀 테스트](../../../frontend/admin/test/reconciliation.test.mjs)와 위 최종 14건 실행 명령·집계 |
 | 관리자 컴파일·번들 | TypeScript·Vite production 빌드 성공, 종료 0 | `npm --prefix frontend/admin run build`; 테스트 건수로 계산하지 않음 |
@@ -103,7 +105,7 @@ node --test frontend/admin/test/reconciliation.test.mjs
 | 초기 완료 게이트 | regression/build/qa/review 전부 passed, 종료 0 | 당시 `gate issue41-final` 실행 결과 요약; 재실행에는 로컬 선언·영수증 필요 |
 | diff 검사 | 공백 오류 없음, 종료 0 | `git diff --check` 및 커밋 전 staged 검사 |
 
-초기 검증 대상은 기준 `090d10bfafdf094128a9227ea25f687cb3577a76`에 제품 컴포넌트·브라우저 회귀 테스트 변경을 더한 작업 트리다. 이후 아래 추가 검증을 위해 Java E2E 테스트를 확장했다. 초기 결과는 해당 시점의 실행 기록이며 최신 작업 트리의 게이트 판정과 구분한다. 커밋 후 HEAD 변경을 새 테스트 실행으로 표시하지 않는다.
+초기 수정 후 검증 대상은 원격 `main`에서 분기한 작업 브랜치에 제품 컴포넌트·브라우저 회귀 테스트 변경을 더한 작업 트리다. 이후 아래 추가 검증을 위해 Java E2E 테스트를 확장했다. 초기 결과는 해당 시점의 실행 기록이며 최신 작업 트리의 게이트 판정과 구분한다. 커밋 후 HEAD 변경을 새 테스트 실행으로 표시하지 않는다.
 
 코드·회귀 테스트·검증 기록의 통합 커밋 메시지: `fix: 명단 비교 필터 불일치와 편집 초안 유실 수정`. 요청 범위의 제품·회귀·이 기록만 포함하며 원격 작업은 수행하지 않는다. 실제 서버 통합의 추가 수행 결과와 최종 미검증 범위는 아래 추가 검증에 구분해 기록했다.
 
@@ -111,7 +113,7 @@ node --test frontend/admin/test/reconciliation.test.mjs
 ## 실제 관리자 로그인·백엔드 추가 검증
 
 - 추가 요청: 실제 관리자 로그인과 백엔드까지 연결한 검증 및 결과 기록. 검증 단계에서는 커밋하지 않고 기존 스테이징과 미커밋 변경을 보존했다.
-- 시작 상태: `fix/41-reconciliation-ui-state`, HEAD `090d10bfafdf094128a9227ea25f687cb3577a76`, 기존 제품·브라우저 회귀·작업 기록 변경 유지. 기존 14건은 합성 API 응답 검증으로 한정하며 아래 통합 검증과 구분한다.
+- 시작 상태: `fix/41-reconciliation-ui-state`, 사용자 커밋 취소 후 기존 제품·브라우저 회귀·작업 기록 변경 유지. 기존 14건은 합성 API 응답 검증으로 한정하며 아래 통합 검증과 구분한다.
 - 환경: Java Corretto 25.0.4.1, Gradle Wrapper 9.7.1, Docker 29.5.2, 전용 PostgreSQL 16.13 컨테이너, 실제 앱 JAR, 설치 Chrome. 제한된 셸의 Docker 소켓 접근은 권한 오류였으며 실제 제품 테스트 실패로 계산하지 않는다. 실행 권한이 있는 환경에서 Docker 응답을 확인했다.
 - 실행 범위: 기존 `AttendeeReconciliationE2ETest`에 이슈 41 전용 통합 시나리오를 추가한다. 관리자 폼 로그인·행사 생성·합성 CSV 업로드는 실제 UI를 사용한다. 정상 비교·필터·페이지·초안 생성은 실제 컨트롤러·저장소·암호화 DB 경로를 통과한다. AI 공급자만 로컬 모의 HTTP 서버로 대체한다.
 - 데이터: 정상 일치 1개·확인 필요 54개를 준비해 기본 50개 페이지 크기에서 두 페이지를 확인한다. 전용 DB의 해당 합성 비교 암호문만 잠시 잘못된 값으로 바꿔 실제 백엔드 `STORAGE_UNAVAILABLE`/HTTP 503을 유발하고, `finally`에서 복원한다. 브라우저 fetch나 API 응답 자체를 가로채지 않는다. 기존 사용자 DB·계정·행사에는 접근하지 않는다.
