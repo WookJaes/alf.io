@@ -168,6 +168,117 @@ class AttendeeReconciliationE2ETest {
             } finally { driver.quit(); }
         } finally { mock.stop(0); executor.shutdownNow(); Files.deleteIfExists(upload); }
     }
+    @Test @Timeout(value=5, unit=TimeUnit.MINUTES)
+    void preservesFilterSelectionAndEditedDraftAcrossRealBackendPageQueries() throws Exception {
+        var mock=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
+        mock.createContext("/responses", exchange -> {
+            var payload=Json.OBJECT_MAPPER.readTree(exchange.getRequestBody().readAllBytes());
+            var facts=Json.OBJECT_MAPPER.readTree(payload.path("input").asString()).path("items");
+            List<Map<String,Object>> entries=new ArrayList<>();
+            for (var fact: facts) {
+                List<String> findings=new ArrayList<>(); fact.path("findings").forEach(f->findings.add(f.asString()));
+                entries.add(Map.of("reference",fact.path("reference").asString(),"findingOrder",findings,"style","POLITE","detail","DETAILED"));
+            }
+            byte[] response=Json.toJson(Map.of("status","completed","output",List.of(Map.of("type","message","content",List.of(
+                Map.of("type","output_text","text",Json.toJson(Map.of("entries",entries)))))),
+                "usage",Map.of("input_tokens",1,"output_tokens",1))).getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200,response.length);
+            try (var output=exchange.getResponseBody()) { output.write(response); }
+        });
+        mock.start();
+        var csv=new StringBuilder(CSV);
+        for (int i=1;i<=51;i++) csv.append(String.format(Locale.ROOT,"20000000-0000-0000-0000-%012d,synthetic-%d@example.invalid%n",i,i));
+        Path upload=Files.createTempFile("attendee-ui-state-synthetic-", ".csv"); Files.writeString(upload,csv);
+        try (var environment=new ValidationEnvironment()) {
+            var base=environment.startApp(Path.of(System.getenv("VALIDATION_APP_JAR")),Map.of(
+                "ALFIO_ATTENDEEASSISTANT_ENCRYPTIONKEY",Base64.getEncoder().encodeToString(new byte[32]),
+                "ALFIO_ATTENDEEASSISTANT_AIENABLED","true","ALFIO_ATTENDEEASSISTANT_OPENAIAPIKEY","synthetic-key",
+                "ALFIO_ATTENDEEASSISTANT_TESTENDPOINT","http://127.0.0.1:"+mock.getAddress().getPort()+"/responses"));
+            environment.seedAdministrator(); environment.assertLoginPageReady();
+            var driver=ValidationBrowser.create();
+            try {
+                var browser=new NormalFlowE2ETest.BrowserWebDriver(NormalFlowE2ETest.BrowserWebDriver.Browser.CHROME,driver);
+                var admin=new AdminConsole(browser,base,"admin","validation-only-password",null);
+                admin.login();
+                String slug="attendee-state-"+UUID.randomUUID();
+                admin.createEvent(new AdminConsole.EventDefinition(slug,"Synthetic UI state event","Synthetic location","Synthetic description",base,base,base,10,"0","CHF","0",true,List.of(),"Standard"));
+                seed(environment,slug);
+                var wait=new WebDriverWait(driver,Duration.ofSeconds(30));
+                wait.until(d->d.findElements(By.cssSelector("a[data-ui-sref^='events.single.attendeeReconciliation']")).stream().filter(WebElement::isDisplayed).findFirst().orElse(null)).click();
+                wait.until(d->shadow(driver,"#csv-file")!=null);
+                shadow(driver,"#csv-file").sendKeys(upload.toAbsolutePath().toString()); click(driver,"#compare");
+                wait.until(d->shadow(driver,"#summary")!=null);
+                assertTrue(shadow(driver,"#summary").getText().contains("정상 일치 1개 · 확인 필요 54개"));
+                assertEquals(50,((Number)driver.executeScript("return document.querySelector('alfio-attendee-reconciliation').shadowRoot.querySelectorAll('[data-reference]').length")).intValue());
+                shadow(driver,"[data-reference='F-2'] input").click(); click(driver,"#generate");
+                wait.until(d->shadow(driver,"#draft-F-2")!=null);
+                shadow(driver,"#draft-F-2").clear(); shadow(driver,"#draft-F-2").sendKeys("페이지와 필터 이동에도 보존할 합성 편집 초안");
+                String id=databaseId(environment), endpoint="/admin/api/events/"+slug+"/attendee-reconciliations/"+id;
+                String encrypted;
+                try (var connection=environment.connection(); var query=connection.prepareStatement("select encrypted_result from attendee_reconciliation where id=?")) {
+                    query.setString(1,id);
+                    try (var rows=query.executeQuery()) { assertTrue(rows.next()); encrypted=rows.getString(1); }
+                }
+                // Fault injection is limited to this run's synthetic encrypted comparison, then restored.
+                try {
+                    replaceEncryptedResult(environment,id,"synthetic-invalid-ciphertext");
+                    assertEquals(503,status(driver,endpoint+"?filter=MATCHED"));
+                    chooseFilter(driver,"MATCHED"); wait.until(d->shadow(driver,".error")!=null); waitForIdle(driver,wait);
+                    assertEquals("ATTENTION",shadow(driver,"#filter").getDomProperty("value"));
+                    assertTrue(shadow(driver,".error").getText().contains("저장 결과를 읽을 수 없습니다"));
+                    assertTrue(shadow(driver,"[data-reference='F-2']").getText().contains("이메일 불일치"));
+                    assertEditedDraft(driver); assertEquals("true",shadow(driver,"[data-reference='F-2'] input").getDomProperty("checked"));
+                    captureState(driver,"filter-503");
+                    assertEquals(503,status(driver,endpoint+"?filter=ATTENTION&page=1"));
+                    click(driver,"#next"); wait.until(d->shadow(driver,".error")!=null); waitForIdle(driver,wait);
+                    assertTrue(pagePosition(driver).contains("1 / 2")); assertEditedDraft(driver);
+                    assertEquals("true",shadow(driver,"[data-reference='F-2'] input").getDomProperty("checked"));
+                    captureState(driver,"page-503");
+                } finally { replaceEncryptedResult(environment,id,encrypted); }
+                assertEquals(200,status(driver,endpoint+"?filter=MATCHED"));
+                chooseFilter(driver,"MATCHED");
+                wait.until(d->"MATCHED".equals(shadow(driver,"#filter").getDomProperty("value"))); waitForIdle(driver,wait);
+                assertEquals(1,((Number)driver.executeScript("return document.querySelector('alfio-attendee-reconciliation').shadowRoot.querySelectorAll('[data-reference]').length")).intValue());
+                assertTrue(shadow(driver,"[data-reference]").getText().contains("정상 일치")); assertEditedDraft(driver);
+                captureState(driver,"filter-success");
+                chooseFilter(driver,"ALL"); wait.until(d->"ALL".equals(shadow(driver,"#filter").getDomProperty("value"))); waitForIdle(driver,wait);
+                assertEditedDraft(driver);
+                click(driver,"#next"); wait.until(d->pagePosition(driver).contains("2 / 2")); waitForIdle(driver,wait);
+                assertEditedDraft(driver); captureState(driver,"page-success");
+                assertEquals(200,status(driver,endpoint+"?filter=ALL&page=1"));
+                click(driver,"#previous"); wait.until(d->pagePosition(driver).contains("1 / 2")); waitForIdle(driver,wait);
+                assertEditedDraft(driver); assertEquals("true",shadow(driver,"[data-reference='F-2'] input").getDomProperty("checked"));
+                driver.executeCdpCommand("Browser.grantPermissions",Map.of("origin",base,"permissions",List.of("clipboardReadWrite","clipboardSanitizedWrite")));
+                click(driver,"#drafts button"); wait.until(d->shadow(driver,"#drafts").getText().contains("복사했습니다."));
+                Object copied=driver.executeAsyncScript("const done=arguments[0]; navigator.clipboard.readText().then(done,()=>done('clipboard-error'));");
+                assertEquals("페이지와 필터 이동에도 보존할 합성 편집 초안",copied);
+                assertEncrypted(environment); environment.assertNoDataMigrationFailure();
+                System.out.println("Issue41 E2E: actual admin login, application backend and PostgreSQL; 1 matched/54 attention, 50 items per page; real storage HTTP503 filter/page preserve result/filter/selection/edited draft; restored HTTP200 MATCHED/ALL/page round trip preserve edits; actual clipboard verified; local mock AI only");
+            } finally { driver.quit(); }
+        } finally { mock.stop(0); Files.deleteIfExists(upload); }
+    }
+    private static void replaceEncryptedResult(ValidationEnvironment environment,String id,String encrypted) throws Exception {
+        try (var connection=environment.connection(); var update=connection.prepareStatement("update attendee_reconciliation set encrypted_result=? where id=?")) {
+            update.setString(1,encrypted); update.setString(2,id); assertEquals(1,update.executeUpdate());
+        }
+    }
+    private static void chooseFilter(ChromeDriver driver,String value) {
+        new org.openqa.selenium.support.ui.Select(shadow(driver,"#filter")).selectByValue(value);
+    }
+    private static void waitForIdle(ChromeDriver driver,WebDriverWait wait) {
+        wait.until(d->"false".equals(shadow(driver,"section.panel").getDomAttribute("aria-busy")));
+    }
+    private static String pagePosition(ChromeDriver driver) {
+        return (String)driver.executeScript("return document.querySelector('alfio-attendee-reconciliation').shadowRoot.querySelector('#previous').parentElement.textContent");
+    }
+    private static void assertEditedDraft(ChromeDriver driver) {
+        assertEquals("페이지와 필터 이동에도 보존할 합성 편집 초안",shadow(driver,"#draft-F-2").getDomProperty("value"));
+        assertTrue(shadow(driver,"#generate").getText().contains("선택 1개"));
+    }
+    private static void captureState(ChromeDriver driver,String name) throws Exception {
+        var directory=Path.of("build","validation","issue41-screen"); Files.createDirectories(directory);
+        Files.copy(driver.getScreenshotAs(OutputType.FILE).toPath(),directory.resolve(name+".png"),java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    }
     private static void click(ChromeDriver driver, String selector) {
         WebElement element = shadow(driver, selector);
         driver.executeScript("arguments[0].scrollIntoView({block:'center'})", element);

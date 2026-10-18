@@ -112,18 +112,20 @@ export class AttendeeReconciliation extends LitElement {
         if (e instanceof TypeError) return '파일이 변경되었거나 연결에 실패했습니다. CSV를 다시 선택하고 시도해 주세요.';
         return e instanceof Error ? e.message : '연결을 확인하고 다시 시도해 주세요.';
     }
-    private async operation(action: (version: number) => Promise<void>, clearDraft = true) {
+    private async operation(action: (version: number) => Promise<void>) {
         this.cancel(); const version = this.version;
         this.busy = true; this.error = ''; this.copied = '';
-        if (clearDraft) { this.draft = null; this.selected = new Set(); }
         try { await action(version); }
         catch (e) { if (version === this.version) this.error = this.message(e); }
         finally { if (version === this.version) this.busy = false; }
     }
-    private async load(id: string, page = 0) {
+    private async load(id: string, page = 0, filter = this.filter) {
         await this.operation(async version => {
-            const result = await this.request<Page>(`${this.base}/${encodeURIComponent(id)}?filter=${this.filter}&page=${page}`);
-            if (version === this.version) this.result = result;
+            const result = await this.request<Page>(`${this.base}/${encodeURIComponent(id)}?filter=${filter}&page=${page}`);
+            if (version === this.version) {
+                if (this.result?.header.comparisonId !== id) { this.draft = null; this.selected = new Set(); }
+                this.result = result; this.filter = filter;
+            }
         });
     }
     private async compare() {
@@ -132,9 +134,11 @@ export class AttendeeReconciliation extends LitElement {
         await this.operation(async version => {
             const header = await this.request<Header>(this.base, 'POST', file, true);
             if (version !== this.version) return;
-            this.filter = 'ATTENTION';
             const result = await this.request<Page>(`${this.base}/${header.comparisonId}?filter=ATTENTION`);
-            if (version === this.version) { this.result = result; await this.refreshHistory(); }
+            if (version === this.version) {
+                this.result = result; this.filter = 'ATTENTION'; this.draft = null; this.selected = new Set();
+                await this.refreshHistory();
+            }
         });
     }
     private async generate() {
@@ -143,7 +147,7 @@ export class AttendeeReconciliation extends LitElement {
         await this.operation(async version => {
             const draft = await this.request<Draft>(`${this.base}/${id}/drafts`, 'POST', JSON.stringify({references}));
             if (version === this.version) this.draft = draft;
-        }, false);
+        });
     }
     private toggle(reference: string, checked: boolean) {
         const selected = new Set(this.selected);
@@ -156,7 +160,7 @@ export class AttendeeReconciliation extends LitElement {
         const id = this.result.header.comparisonId;
         await this.operation(async version => {
             await this.request<void>(`${this.base}/${id}`, 'DELETE');
-            if (version === this.version) { this.result = null; await this.refreshHistory(); }
+            if (version === this.version) { this.result = null; this.draft = null; this.selected = new Set(); await this.refreshHistory(); }
         });
     }
     private async copy(entry: DraftEntry) {
@@ -180,7 +184,11 @@ export class AttendeeReconciliation extends LitElement {
                 ${this.file && this.file.size > 5 * 1024 * 1024 ? html`<span>${errors.FILE_TOO_LARGE}</span>` : nothing}
             </div>
             ${this.history.length ? html`<div class="toolbar"><label>저장된 비교 <select id="history" ?disabled=${this.busy}
-                @change=${(e: Event) => { const id = (e.target as HTMLSelectElement).value; if (id) void this.load(id); }}>
+                @change=${(e: Event) => {
+                    const select = e.target as HTMLSelectElement, id = select.value;
+                    select.value = this.result?.header.comparisonId ?? '';
+                    if (id) void this.load(id);
+                }}>
                 <option value="" .selected=${!this.result}>비교 결과 선택</option>${this.history.map(h => html`<option value=${h.comparisonId} .selected=${this.result?.header.comparisonId === h.comparisonId}>
                     ${this.date(h.comparedAt)} · 확인 필요 ${h.summary.attentionTickets}개</option>`)}
                 </select></label><button ?disabled=${this.busy} @click=${this.refreshHistory}>목록 새로고침</button></div>` : nothing}
@@ -193,7 +201,11 @@ export class AttendeeReconciliation extends LitElement {
                 <small>유형별 건수는 중복 집계될 수 있습니다. 비교: ${this.date(result.header.comparedAt)} / 만료: ${this.date(result.header.expiresAt)}.
                     이후 시스템 변경은 재비교해야 합니다.</small>
             </div><div class="toolbar"><label>결과 필터 <select id="filter" ?disabled=${this.busy}
-                @change=${(e: Event) => { this.filter = (e.target as HTMLSelectElement).value as Filter; void this.load(result.header.comparisonId); }}>
+                @change=${(e: Event) => {
+                    const select = e.target as HTMLSelectElement, filter = select.value as Filter;
+                    select.value = this.filter;
+                    void this.load(result.header.comparisonId, 0, filter);
+                }}>
                 ${Object.entries(labels).map(([value, label]) => html`<option value=${value} .selected=${value === this.filter}>${label}</option>`)}</select></label>
                 <button id="generate" ?disabled=${this.busy || !result.header.aiAvailable || this.selected.size === 0} @click=${this.generate}>
                     선택 ${this.selected.size}개 설명·초안 생성</button>
@@ -207,7 +219,7 @@ export class AttendeeReconciliation extends LitElement {
                 <button id="next" ?disabled=${this.busy || (result.page + 1) * result.pageSize >= result.total}
                 @click=${() => this.load(result.header.comparisonId, result.page + 1)}>다음</button></div>` : nothing}
             ${this.draft ? html`<section id="drafts"><h3>AI가 검증된 표현으로 구성한 안내 초안</h3>
-                <p>선택 항목만 설명합니다. 근거를 확인하고 문구를 수정한 뒤 사용하세요. 수정한 초안은 브라우저에만 있으며 새로고침 시 사라집니다.</p>
+                <p>선택 항목만 설명합니다. 근거를 확인하고 문구를 수정한 뒤 사용하세요. 같은 비교의 페이지·필터를 바꿔도 선택 항목과 초안은 유지됩니다. 현재 목록에 없는 선택 항목도 포함합니다. 수정한 초안은 브라우저에만 있으며 새로고침 시 사라집니다.</p>
                 <small>모델 ${this.draft.model} · 입력 ${this.draft.inputTokens}토큰(캐시 ${this.draft.cachedInputTokens}) · 출력 ${this.draft.outputTokens}토큰 · ${this.draft.durationMillis}ms.
                     실제 청구액은 공급자의 사용 내역을 확인하세요.</small>
                 ${this.draft.entries.map(entry => html`<article class="item"><h4>${entry.reference}</h4>
