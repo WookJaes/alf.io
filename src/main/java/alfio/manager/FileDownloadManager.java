@@ -20,75 +20,141 @@ import alfio.model.modification.UploadBase64FileModification;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import org.apache.commons.lang3.StringUtils;
+import org.eclipse.jetty.client.HttpClient;
+import org.eclipse.jetty.client.InputStreamResponseListener;
+import org.eclipse.jetty.http.HttpHeader;
+import org.eclipse.jetty.util.SocketAddressResolver;
+import org.eclipse.jetty.util.HostPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.Assert;
 
-import java.io.IOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.util.Objects;
+import java.net.UnknownHostException;
+import java.util.Arrays;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 import static java.util.Objects.requireNonNull;
 
-
 public class FileDownloadManager {
 
+    private static final Pattern NUMERIC_HOST = Pattern.compile("(?i)(?:0x[0-9a-f]+|[0-9]+)(?:\\.(?:0x[0-9a-f]+|[0-9]+))*");
+    private static final Pattern IPV4_HOST = Pattern.compile("(?:0|[1-9][0-9]{0,2})(?:\\.(?:0|[1-9][0-9]{0,2})){3}");
     private static final Logger log = LoggerFactory.getLogger(FileDownloadManager.class);
-    private final HttpClient httpClient;
+    private final HostResolver dnsResolver;
 
-    public FileDownloadManager(HttpClient httpClient) {
-        this.httpClient = httpClient;
+    public FileDownloadManager() {
+        this(InetAddress::getAllByName);
+    }
+
+    // Package-private seam for deterministic DNS tests; production always uses the system resolver.
+    FileDownloadManager(HostResolver dnsResolver) {
+        this.dnsResolver = dnsResolver;
     }
 
     public DownloadedFile downloadFile(String url) {
         URI toFetch = URI.create(requireNonNull(StringUtils.trimToNull(url)));
         String scheme = toFetch.getScheme();
-        Assert.isTrue(
-            scheme != null && (
-                scheme.equalsIgnoreCase("https") || scheme.equalsIgnoreCase("http")
-            ),
-            "scheme must be http or https"
-        );
-        HttpRequest httpRequest = HttpRequest.newBuilder(toFetch).GET().build();
-        HttpResponse<byte[]> response;
-        try {
-            response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
-        } catch (IOException exception) {
-            logWarning(exception);
-            return null;
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            logWarning(exception);
+        Assert.isTrue(scheme != null && (scheme.equalsIgnoreCase("https") || scheme.equalsIgnoreCase("http")),
+            "scheme must be http or https");
+        String host = toFetch.getHost();
+        if (host == null || toFetch.getRawUserInfo() != null || host.contains("%")
+            || (NUMERIC_HOST.matcher(host).matches() && !IPV4_HOST.matcher(host).matches())) {
             return null;
         }
-        if(callSuccessful(response)) {
-            String[] parts = Pattern.compile("/").split(url);
-            String name = parts[parts.length - 1];
-            if(Objects.nonNull(response.body())) {
-                return new DownloadedFile(
-                        response.body(),
-                        name,
-                        response.headers().firstValue("Content-Type").orElse("application/octet-stream")
-                    );
-            } else {
+        String dnsHost = host.startsWith("[") ? host.substring(1, host.length() - 1) : host;
+        try {
+            InetAddress[] addresses = dnsResolver.resolve(dnsHost);
+            if (addresses == null || addresses.length == 0) {
                 return null;
             }
-        } else {
-            log.warn("downloading file not successful:" + response);
+            for (InetAddress address : addresses) {
+                if (!isPublicAddress(address)) {
+                    return null;
+                }
+            }
+            // Keep the original host for Host/SNI/certificate verification, but connect only
+            // to this validated snapshot. No second system DNS lookup, proxy or redirect.
+            InetAddress[] pinned = addresses.clone();
+            for (int i = 0; i < pinned.length; i++) {
+                // Preserve the URL hostname in the resolved socket address for TLS peer identity.
+                // getByAddress(host, bytes) never performs a DNS lookup.
+                pinned[i] = InetAddress.getByAddress(dnsHost, pinned[i].getAddress());
+            }
+            SocketAddressResolver pinnedResolver = (requestedHost, port, context, promise) -> {
+                if (!HostPort.normalizeHost(dnsHost).equalsIgnoreCase(requestedHost)) {
+                    promise.failed(new UnknownHostException("Unexpected image host"));
+                } else {
+                    promise.succeeded(Arrays.stream(pinned).map(address -> new InetSocketAddress(address, port)).toList());
+                }
+            };
+            try (var client = imageClient(pinnedResolver)) {
+                client.start();
+                var listener = new InputStreamResponseListener();
+                client.newRequest(toFetch).timeout(30, TimeUnit.SECONDS).send(listener);
+                var response = listener.get(30, TimeUnit.SECONDS);
+                try (var body = listener.getInputStream()) {
+                    if (response.getStatus() < 200 || response.getStatus() >= 300) {
+                        return null;
+                    }
+                    String[] parts = Pattern.compile("/").split(url);
+                    var contentType = response.getHeaders().get(HttpHeader.CONTENT_TYPE);
+                    return new DownloadedFile(body.readAllBytes(), parts[parts.length - 1],
+                        contentType == null ? "application/octet-stream" : contentType);
+                }
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (Exception exception) {
+            // Do not log user URLs, DNS answers or server response data.
+            log.warn("Unable to download image");
             return null;
         }
     }
 
-    private void logWarning(Throwable exception) {
-        log.warn("error while downloading file", exception);
+    HttpClient imageClient(SocketAddressResolver pinnedResolver) {
+        var client = new HttpClient();
+        client.setSocketAddressResolver(pinnedResolver);
+        client.setFollowRedirects(false);
+        client.setConnectTimeout(10_000);
+        client.setIdleTimeout(30_000);
+        return client;
     }
 
-    private boolean callSuccessful(HttpResponse<?> response) {
-        return response.statusCode() >= 200 && response.statusCode() < 300;
+    @FunctionalInterface
+    interface HostResolver {
+        InetAddress[] resolve(String host) throws UnknownHostException;
+    }
+
+    static boolean isPublicAddress(InetAddress address) {
+        if (address == null || address.isAnyLocalAddress() || address.isLoopbackAddress()
+            || address.isLinkLocalAddress() || address.isSiteLocalAddress() || address.isMulticastAddress()) {
+            return false;
+        }
+        byte[] bytes = address.getAddress();
+        int first = Byte.toUnsignedInt(bytes[0]);
+        int second = Byte.toUnsignedInt(bytes[1]);
+        if (bytes.length == 4) {
+            int third = Byte.toUnsignedInt(bytes[2]);
+            return first != 0 && first != 10 && first != 127 && first < 224
+                && !(first == 100 && second >= 64 && second <= 127)
+                && !(first == 169 && second == 254)
+                && !(first == 172 && second >= 16 && second <= 31)
+                && !(first == 192 && (second == 168 || (second == 0 && (third == 0 || third == 2))
+                    || (second == 88 && third == 99)))
+                && !(first == 198 && (second == 18 || second == 19 || (second == 51 && third == 100)))
+                && !(first == 203 && second == 0 && third == 113);
+        }
+        // Only global unicast IPv6; exclude special-purpose, documentation and transition ranges.
+        return bytes.length == 16 && (first & 0xe0) == 0x20
+            && !(first == 0x20 && second == 0x01 && (Byte.toUnsignedInt(bytes[2]) < 2
+                || (bytes[2] == 0x0d && Byte.toUnsignedInt(bytes[3]) == 0xb8)))
+            && !(first == 0x20 && second == 0x02)
+            && !(first == 0x3f && second == 0xff && (Byte.toUnsignedInt(bytes[2]) & 0xf0) == 0);
     }
 
     @Getter

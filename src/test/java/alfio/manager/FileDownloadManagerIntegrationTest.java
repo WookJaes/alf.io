@@ -21,14 +21,19 @@ import com.github.tomakehurst.wiremock.junit5.WireMockTest;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import java.net.http.HttpClient;
+import java.net.InetAddress;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 
 @WireMockTest
 class FileDownloadManagerIntegrationTest {
 
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private FileDownloadManager downloader(WireMockRuntimeInfo info) {
+        return ImageDownloadTestSupport.routedDownloader(host -> new InetAddress[] {
+            InetAddress.getByAddress(new byte[] {8, 8, 8, 8})
+        }, info.getHttpPort(), endpoint -> assertEquals("8.8.8.8", endpoint.getAddress().getHostAddress()));
+    }
 
     @Test
     void testFileDownloadSuccess(WireMockRuntimeInfo wmRuntimeInfo) {
@@ -36,10 +41,11 @@ class FileDownloadManagerIntegrationTest {
             .willReturn(ok("Hello World!")
                 .withHeader("Content-Type", "text/plain; charset=utf-8")));
 
-        var file = new FileDownloadManager(httpClient).downloadFile(wmRuntimeInfo.getHttpBaseUrl() + "/test.txt");
+        var file = downloader(wmRuntimeInfo).downloadFile("http://image.example:" + wmRuntimeInfo.getHttpPort() + "/test.txt");
         Assertions.assertEquals("text/plain; charset=utf-8", file.getType());
         Assertions.assertEquals("test.txt", file.getName());
         Assertions.assertEquals("Hello World!".length(), file.getFile().length);
+        verify(1, getRequestedFor(urlEqualTo("/test.txt")));
     }
 
     @Test
@@ -47,7 +53,8 @@ class FileDownloadManagerIntegrationTest {
         stubFor(get("/404")
             .willReturn(notFound()));
 
-        var res = new FileDownloadManager(httpClient).downloadFile(wmRuntimeInfo.getHttpBaseUrl() + "/404");
+        var res = downloader(wmRuntimeInfo).downloadFile("http://image.example:" + wmRuntimeInfo.getHttpPort() + "/404");
         Assertions.assertNull(res);
+        verify(1, getRequestedFor(urlEqualTo("/404")));
     }
 }
