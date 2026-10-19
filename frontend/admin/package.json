@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build --mode production",
     "preview": "vite preview",
-    "test:reconciliation": "node --test test/reconciliation.test.mjs"
+    "test:reconciliation": "node --test test/reconciliation.test.mjs",
+    "test:required-dropdown": "node --test test/required-dropdown.test.mjs"
   },
   "dependencies": {
     "@lit/context": "1.1.6",

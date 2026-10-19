@@ -20,6 +20,8 @@ import alfio.TestConfiguration;
 import alfio.config.DataSourceConfiguration;
 import alfio.config.Initializer;
 import alfio.controller.api.ControllerConfiguration;
+import alfio.controller.api.ApiControllerExceptionHandler;
+import alfio.controller.api.admin.EventApiController;
 import alfio.controller.api.v1.admin.EventApiV1Controller;
 import alfio.manager.EventManager;
 import alfio.manager.EventStatisticsManager;
@@ -36,17 +38,27 @@ import alfio.model.user.Organization;
 import alfio.model.user.Role;
 import alfio.model.user.User;
 import alfio.repository.TicketCategoryRepository;
+import alfio.repository.EventRepository;
+import alfio.repository.PurchaseContextFieldRepository;
 import alfio.repository.system.ConfigurationRepository;
 import alfio.repository.user.OrganizationRepository;
 import alfio.test.util.AlfioIntegrationTest;
 import alfio.test.util.IntegrationTestUtil;
 import alfio.util.BaseIntegrationTest;
 import alfio.util.ClockProvider;
+import alfio.util.Json;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
+import org.springframework.http.converter.StringHttpMessageConverter;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
 
@@ -59,6 +71,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static java.util.Objects.requireNonNull;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.junit.jupiter.api.Assertions.*;
 
 
@@ -96,10 +109,20 @@ class EventApiV1IntegrationTest extends BaseIntegrationTest {
     private TicketCategoryRepository ticketCategoryRepository;
 
 
+    @Autowired
+    private EventApiController adminController;
+
+    @Autowired
+    private EventRepository eventRepository;
+
+    @Autowired
+    private PurchaseContextFieldRepository fieldRepository;
+
     private String organizationName;
     private String username;
     private Organization organization;
     private Principal mockPrincipal;
+    private Principal ownerPrincipal;
 
     private final String defaultSlug = "test";
 
@@ -169,6 +192,169 @@ class EventApiV1IntegrationTest extends BaseIntegrationTest {
 
     static EventCreationRequest creationRequest(String shortName) {
         return creationRequest(shortName, "additionalInfoName");
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    void rejectsEmptyRequiredDropdownInApiCreation(List<AdditionalInfoRequest.RestrictedValueRequest> options) throws Exception {
+        var request = dropdownRequest("invalid-api-dropdown", true, options);
+        var response = creationMvc().perform(post("/api/v1/admin/event/create").principal(mockPrincipal)
+            .contentType(MediaType.APPLICATION_JSON).content(Json.toJson(request))).andReturn().getResponse();
+        assertTrue(eventRepository.findOptionalByShortName(request.getSlug()).isEmpty());
+        assertEquals(400, response.getStatus(), response.getContentAsString());
+        assertTrue(response.getContentAsString().contains("invalid.additionalInfo"));
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    void rejectsEmptyRequiredDropdownInAdminCreation(List<AdditionalInfoRequest.RestrictedValueRequest> options) throws Exception {
+        var request = dropdownRequest("invalid-admin-dropdown", true, options);
+        var modification = request.toEventModification(organization, title -> request.getSlug(), null);
+        var response = creationMvc().perform(post("/admin/api/events/new").principal(organizationOwner())
+            .contentType(MediaType.APPLICATION_JSON).content(Json.toJson(modification))).andReturn().getResponse();
+        assertTrue(eventRepository.findOptionalByShortName(request.getSlug()).isEmpty());
+        assertEquals(400, response.getStatus(), response.getContentAsString());
+        var result = Json.OBJECT_MAPPER.readTree(response.getContentAsString());
+        assertFalse(result.path("success").asBoolean());
+        assertEquals("ticketFields[0].restrictedValues", result.path("validationErrors").get(0).path("fieldName").asString());
+        var check = creationMvc().perform(post("/admin/api/events/check").principal(organizationOwner())
+            .contentType(MediaType.APPLICATION_JSON).content(Json.toJson(modification))).andReturn().getResponse();
+        assertEquals(200, check.getStatus());
+        assertFalse(Json.OBJECT_MAPPER.readTree(check.getContentAsString()).path("success").asBoolean());
+    }
+
+    @Test
+    void acceptsRequiredDropdownInApiCreation() throws Exception {
+        assertDropdownCreation(false, true, dropdownOptions());
+    }
+
+    @Test
+    void acceptsRequiredDropdownInAdminCreation() throws Exception {
+        assertDropdownCreation(true, true, dropdownOptions());
+    }
+
+    @Test
+    void preservesOptionalEmptyDropdownInApiCreation() throws Exception {
+        assertDropdownCreation(false, false, List.of());
+    }
+
+    @Test
+    void preservesOptionalEmptyDropdownInAdminCreation() throws Exception {
+        assertDropdownCreation(true, false, List.of());
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    void rejectsEmptyRequiredRadioInApiCreation(List<AdditionalInfoRequest.RestrictedValueRequest> options) throws Exception {
+        var request = singleChoiceRequest("invalid-api-radio", true, options, AdditionalInfoRequest.AdditionalInfoType.RADIO);
+        var response = creationMvc().perform(post("/api/v1/admin/event/create").principal(mockPrincipal)
+            .contentType(MediaType.APPLICATION_JSON).content(Json.toJson(request))).andReturn().getResponse();
+        assertTrue(eventRepository.findOptionalByShortName(request.getSlug()).isEmpty());
+        assertEquals(400, response.getStatus(), response.getContentAsString());
+        assertTrue(response.getContentAsString().contains("invalid.additionalInfo"));
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    void rejectsEmptyRequiredRadioInAdminCreation(List<AdditionalInfoRequest.RestrictedValueRequest> options) throws Exception {
+        var request = singleChoiceRequest("invalid-admin-radio", true, options, AdditionalInfoRequest.AdditionalInfoType.RADIO);
+        var modification = request.toEventModification(organization, title -> request.getSlug(), null);
+        var response = creationMvc().perform(post("/admin/api/events/new").principal(organizationOwner())
+            .contentType(MediaType.APPLICATION_JSON).content(Json.toJson(modification))).andReturn().getResponse();
+        assertTrue(eventRepository.findOptionalByShortName(request.getSlug()).isEmpty());
+        assertEquals(400, response.getStatus(), response.getContentAsString());
+        var result = Json.OBJECT_MAPPER.readTree(response.getContentAsString());
+        assertFalse(result.path("success").asBoolean());
+        assertEquals("ticketFields[0].restrictedValues", result.path("validationErrors").get(0).path("fieldName").asString());
+    }
+
+    @Test
+    void rejectsBlankAndDisabledRadioInBothCreationPaths() throws Exception {
+        for (boolean admin : List.of(false, true)) {
+            for (var option : List.of(
+                new AdditionalInfoRequest.RestrictedValueRequest(" ", true, List.of(new DescriptionRequest("en", "Blank"))),
+                new AdditionalInfoRequest.RestrictedValueRequest("blue", false, List.of(new DescriptionRequest("en", "Blue"))))) {
+                var request = singleChoiceRequest("invalid-radio-values", true, List.of(option), AdditionalInfoRequest.AdditionalInfoType.RADIO);
+                Object body = admin ? request.toEventModification(organization, title -> request.getSlug(), null) : request;
+                var response = creationMvc().perform(post(admin ? "/admin/api/events/new" : "/api/v1/admin/event/create")
+                    .principal(admin ? organizationOwner() : mockPrincipal).contentType(MediaType.APPLICATION_JSON)
+                    .content(Json.toJson(body))).andReturn().getResponse();
+                assertEquals(400, response.getStatus(), response.getContentAsString());
+                assertTrue(eventRepository.findOptionalByShortName(request.getSlug()).isEmpty());
+            }
+        }
+    }
+
+    @Test
+    void acceptsValidRequiredAndOptionalRadioInBothCreationPaths() throws Exception {
+        for (boolean admin : List.of(false, true)) {
+            for (boolean required : List.of(false, true)) {
+                var request = singleChoiceRequest("valid-radio-" + admin + "-" + required, required,
+                    required ? dropdownOptions() : List.of(), AdditionalInfoRequest.AdditionalInfoType.RADIO);
+                Object body = admin ? request.toEventModification(organization, title -> request.getSlug(), null) : request;
+                var response = creationMvc().perform(post(admin ? "/admin/api/events/new" : "/api/v1/admin/event/create")
+                    .principal(admin ? organizationOwner() : mockPrincipal).contentType(MediaType.APPLICATION_JSON)
+                    .content(Json.toJson(body))).andReturn().getResponse();
+                assertEquals(200, response.getStatus(), response.getContentAsString());
+                var event = eventRepository.findOptionalByShortName(request.getSlug()).orElseThrow();
+                var field = fieldRepository.findAdditionalFieldsForEvent(event.getId()).getFirst();
+                assertEquals("radio", field.getType());
+                assertEquals(required, field.isRequired());
+                assertEquals(required ? List.of("blue") : List.of(), field.getRestrictedValues());
+            }
+        }
+    }
+
+    private void assertDropdownCreation(boolean admin, boolean required, List<AdditionalInfoRequest.RestrictedValueRequest> options) throws Exception {
+        var request = dropdownRequest("valid-dropdown", required, options);
+        Object body = admin ? request.toEventModification(organization, title -> request.getSlug(), null) : request;
+        var response = creationMvc().perform(post(admin ? "/admin/api/events/new" : "/api/v1/admin/event/create")
+            .principal(admin ? organizationOwner() : mockPrincipal).contentType(MediaType.APPLICATION_JSON)
+            .content(Json.toJson(body))).andReturn().getResponse();
+        assertEquals(200, response.getStatus(), response.getContentAsString());
+        if (admin) {
+            assertEquals("OK", response.getContentAsString());
+        } else {
+            assertEquals(request.getSlug(), response.getContentAsString());
+        }
+        var created = eventRepository.findOptionalByShortName(request.getSlug()).orElseThrow();
+        var fields = fieldRepository.findAdditionalFieldsForEvent(created.getId());
+        assertEquals(1, fields.size());
+        assertEquals(required, fields.getFirst().isRequired());
+        assertEquals(required ? List.of("blue") : List.of(), fields.getFirst().getRestrictedValues());
+    }
+
+    private MockMvc creationMvc() {
+        return MockMvcBuilders.standaloneSetup(controller, adminController)
+            .setControllerAdvice(new ApiControllerExceptionHandler())
+            .setMessageConverters(new StringHttpMessageConverter(), new JacksonJsonHttpMessageConverter(Json.OBJECT_MAPPER))
+            .build();
+    }
+
+    private Principal organizationOwner() {
+        String owner = username + "-owner";
+        if (ownerPrincipal == null) {
+            userManager.insertUser(organization.getId(), owner, "Synthetic", "Owner", "owner@example.invalid", Role.OWNER, User.Type.INTERNAL, null);
+            ownerPrincipal = () -> owner;
+        }
+        return ownerPrincipal;
+    }
+
+    private static List<AdditionalInfoRequest.RestrictedValueRequest> dropdownOptions() {
+        return List.of(new AdditionalInfoRequest.RestrictedValueRequest("blue", true, List.of(new DescriptionRequest("en", "Blue"))));
+    }
+
+    private static EventCreationRequest dropdownRequest(String slug, boolean required, List<AdditionalInfoRequest.RestrictedValueRequest> options) {
+        return singleChoiceRequest(slug, required, options, AdditionalInfoRequest.AdditionalInfoType.LIST_BOX);
+    }
+
+    private static EventCreationRequest singleChoiceRequest(String slug, boolean required, List<AdditionalInfoRequest.RestrictedValueRequest> options, AdditionalInfoRequest.AdditionalInfoType type) {
+        var base = creationRequest(slug);
+        return new EventCreationRequest(base.getTitle(), base.getSlug(), base.getDescription(), base.getFormat(), base.getLocation(),
+            base.getTimezone(), base.getStartDate(), base.getEndDate(), base.getWebsiteUrl(), base.getTermsAndConditionsUrl(),
+            base.getPrivacyPolicyUrl(), base.getImageUrl(), base.getTickets(), base.getExtensionSettings(),
+            List.of(new AdditionalInfoRequest(0, "synthetic_dropdown", type,
+                required, List.of(new DescriptionRequest("en", "Synthetic dropdown")), List.of(), options, null, false)));
     }
 
     @Test

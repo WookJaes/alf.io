@@ -74,6 +74,9 @@ export class AdditionalFieldEdit extends LitElement {
     preview?: AdditionalField;
 
     @state()
+    private missingSingleChoiceOptions: boolean = false;
+
+    @state()
     existingFieldName?: string;
 
     @state()
@@ -439,6 +442,11 @@ export class AdditionalFieldEdit extends LitElement {
                 <div class="section-header">Selectable Options</div>
                 <div class="section-subtitle">Define the options attendees can choose from</div>
                 <div class="field-constraints">
+                    ${renderIf(() => this.missingSingleChoiceOptions, () => html`
+                        <sl-alert variant="danger" open role="alert">
+                            <span>Add at least one selectable option for a required dropdown or radio button field.</span>
+                        </sl-alert>
+                    `)}
                     ${this.#form.field({
                         name: 'selectableOptions',
                     }, (selectableOptionsField) => {
@@ -713,6 +721,7 @@ export class AdditionalFieldEdit extends LitElement {
         if (this.dialog != null) {
             this.dialogTitle = request.field == null ? `Add attendee data field` : `Edit ${request.field.name} field`;
             this.editField = request.field != null;
+            this.missingSingleChoiceOptions = false;
             this.existingFieldName = request.field?.name;
             this.purchaseContext = request.purchaseContext;
             this.#form.api.update({
@@ -829,7 +838,17 @@ export class AdditionalFieldEdit extends LitElement {
         }));
     }
 
+    private hasMissingSingleChoiceOptions(field: AdditionalFieldForm): boolean {
+        return (field.type === 'select' || field.type === 'radio') && field.required
+            && !field.selectableOptions.some(option => option.fieldName.trim().length > 0
+                && !field.disabledValues?.includes(option.fieldName));
+    }
+
     private async save(additionalFieldForm: AdditionalFieldForm) {
+        this.missingSingleChoiceOptions = this.hasMissingSingleChoiceOptions(additionalFieldForm);
+        if (this.missingSingleChoiceOptions) {
+            return;
+        }
         if (additionalFieldForm.id == null) {
             await this.createNew(additionalFieldForm);
         } else {
@@ -952,6 +971,9 @@ export class AdditionalFieldEdit extends LitElement {
                 return;
             }
             const currentValue = formState.currentVal.values;
+            if (this.missingSingleChoiceOptions && !this.hasMissingSingleChoiceOptions(currentValue)) {
+                this.missingSingleChoiceOptions = false;
+            }
             if (currentValue.description[locale] != null && currentValue.description[locale].description.label.length > 0) {
                 this.preview = this.getAdditionalFieldFromForm(currentValue);
             }

@@ -155,7 +155,13 @@ public class EventApiV1Controller {
     private boolean validateAdditionalFields(EventCreationRequest request) {
         return CollectionUtils.isEmpty(request.getAdditionalInfo()) || request.getAdditionalInfo()
             .stream()
-            .allMatch(f -> Validator.validateAdditionalInfoName(f.getName()));
+            .allMatch(f -> {
+                if (!Validator.validateAdditionalInfoName(f.getName())) {
+                    return false;
+                }
+                var field = f.toAdditionalField(0);
+                return Validator.isValidRequiredSingleChoice(field.getType(), field.isRequired(), field);
+            });
     }
 
     private boolean validateCategoriesSalesPeriod(EventCreationRequest request) {

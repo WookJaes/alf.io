@@ -735,7 +735,16 @@ public final class Validator {
         } else if (!validateAdditionalInfoName(field.getName())) {
             errors.rejectValue("name", "pattern");
         }
+        if (!isValidRequiredSingleChoice(field.getType(), field.isRequired(), field)) {
+            errors.rejectValue("restrictedValues", "required");
+        }
         return evaluateValidationResult(errors);
+    }
+
+    public static boolean isValidRequiredSingleChoice(String storedType, boolean required, EventModification.WithRestrictedValues field) {
+        return !("select".equals(storedType) || "radio".equals(storedType)) || !required
+            || (storedType.equals(field.getType()) && field.getRestrictedValuesAsString().stream()
+                .anyMatch(value -> StringUtils.isNotBlank(value) && !field.getDisabledValuesAsString().contains(value)));
     }
 
     public static boolean validateAdditionalInfoName(String additionalInfoName) {

@@ -81,7 +81,11 @@ public class AdditionalFieldRequest implements EventModification.WithRestrictedV
 
     @Override
     public List<String> getDisabledValuesAsString() {
-        return Collections.emptyList();
+        if (restrictedValues == null || !("select".equals(type) || "radio".equals(type))) {
+            return Collections.emptyList();
+        }
+        return restrictedValues.stream().filter(value -> !value.isEnabled())
+            .map(EventModification.RestrictedValue::getValue).collect(Collectors.toList());
     }
 
     @Override
