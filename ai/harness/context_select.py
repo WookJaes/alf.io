@@ -12,8 +12,9 @@ import stat
 import sys
 import tempfile
 import time
+import unicodedata
 
-VERSION = '4'
+VERSION = '5'
 FORMAT = 'context-selection/1'
 DEFAULTS = {
     'version': 1, 'allowed_paths': ['AGENTS.md', 'README.md', 'ai', 'docs'],
@@ -65,6 +66,11 @@ def below(path, prefix):
     path = os.path.normcase(path).replace('\\', '/')
     prefix = os.path.normcase(prefix).replace('\\', '/')
     return path == prefix or path.startswith(prefix + '/')
+
+
+def folded(path):
+    """제외 비교용. macOS 등 대소문자·정규화 비구분 파일 시스템의 별칭을 OS와 무관하게 묶는다."""
+    return unicodedata.normalize('NFC', path.replace('\\', '/')).casefold()
 
 
 def terms(text):
@@ -231,8 +237,10 @@ class Selector:
         return path, heading if sep else None
 
     def excluded(self, name):
-        return ('.git' in os.path.normcase(name).replace('\\', '/').split('/') or any(below(name, p) for p in
-                ['ai/local-state', 'ai/local-evidence'] + self.config['exclude']))
+        # 허용 범위는 넓히지 않고 제외만 보수적으로 넓힌다.
+        name = folded(name)
+        prefixes = [folded(p) for p in ['ai/local-state', 'ai/local-evidence'] + self.config['exclude']]
+        return '.git' in name.split('/') or any(name == p or name.startswith(p + '/') for p in prefixes)
 
     def allowed(self, name, paths=None):
         return any(below(name, p) for p in (paths if paths is not None else self.config['allowed_paths']))
@@ -442,12 +450,14 @@ class Selector:
             except (Invalid, OSError) as error:
                 issue('mandatory_missing', str(error), '필수 문서·제목・링크・설정의 허용 경로를 확인한 후 select 재실행')
 
+        def declarations(path):
+            return [m[1] for m in SUPERSEDED.finditer(''.join(sources[path][1].splitlines(keepends=True)[:20]))]
+
         superseded = set()
-        # 파일 수준의 구버전 선언은 검색 문서와 필수 대상 파일에서만 확인한다.
+        # 파일 수준의 구버전 선언은 검색 문서와 필수 대상 파일에서 확인한다.
         inspected_paths = sorted(set(search_entries) | set(mandatory_entries))
         for path in inspected_paths:
-            for match in SUPERSEDED.finditer(''.join(sources[path][1].splitlines(keepends=True)[:20])):
-                replacement = match[1]
+            for replacement in declarations(path):
                 try:
                     relative(replacement)
                     self.document_path(replacement, applicable=replacement in applicable)
@@ -457,10 +467,11 @@ class Selector:
                     excluded.append({'path': path, 'reason': 'superseded', 'replacement': replacement})
                 except Invalid:
                     conflicts.append({'path': path, 'replacement': replacement, 'reason': '대체 문서가 없거나 범위 밖입니다.'})
-        # 순환·연쇄 선언도 자동으로 기준 버전을 추정하지 않는다.
-        for item in excluded:
-            if item['reason'] == 'superseded' and item['replacement'] in superseded:
-                conflicts.append({'path': item['path'], 'replacement': item['replacement'], 'reason': '대체 문서도 구버전으로 선언됐습니다.'})
+                    continue
+                # 순환·연쇄 선언도 자동으로 기준 버전을 추정하지 않는다.
+                # 대체 문서가 검색 범위 밖이어도 그 선언은 설정 범위 안에서 읽어 확인한다.
+                if declarations(replacement):
+                    conflicts.append({'path': path, 'replacement': replacement, 'reason': '대체 문서도 구버전으로 선언됐습니다.'})
 
         mandatory_ids = {}
         for path, heading, origin, spec in required_sections:

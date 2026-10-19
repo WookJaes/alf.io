@@ -5,10 +5,12 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import posixpath
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import unittest
+from unittest import mock
 from collections import Counter
 
 TOOL = Path(__file__).resolve().parents[1] / 'harness/context_select.py'
@@ -559,12 +561,36 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(reasons['docs/bad.md'], 'decode_error')
         self.assertEqual(reasons['docs/large.md'], 'too_large')
 
-    @unittest.skipUnless(os.name == 'nt', 'Windows 대소문자 별칭 전용')
     def test_git_case_alias_always_excluded(self):
+        # 대소문자 비구분 파일 시스템(macOS·Windows)의 별칭을 OS와 무관하게 제외한다.
         self.put('docs/.GIT/private.md', '예약 비밀')
         result, _ = self.select()
         self.assertFalse(any('/.GIT/' in s['path'] for s in result['sections']))
         self.assertIn({'path': 'docs/.GIT', 'reason': 'excluded_path'}, result['excluded'])
+
+    def test_excluded_paths_ignore_case_and_normalization(self):
+        selector = self.selector()
+        # macOS처럼 normcase가 대소문자를 바꾸지 않는 환경을 Windows에서도 재현한다.
+        with mock.patch.object(context.os.path, 'normcase', posixpath.normcase):
+            for name in ('docs/.Git/a.md', 'AI/Local-State/a.md', 'ai/LOCAL-EVIDENCE/a.md'):
+                self.assertTrue(selector.excluded(name), name)
+            self.assertFalse(selector.excluded('docs/gitlab.md'))
+
+    def test_superseded_cycle_through_out_of_scope_document(self):
+        self.put('docs/scope/old.md', '<!-- context: superseded-by=docs/middle.md -->\n# policy\npolicy old\n')
+        self.put('docs/middle.md', '<!-- context: superseded-by=docs/scope/old.md -->\n# policy\npolicy middle\n')
+        self.put('docs/scope/other.md', '# policy\npolicy unrelated\n')
+        result, code = self.select('policy', paths=['AGENTS.md', 'docs/scope'])
+        self.assertEqual((result['status'], code), ('conflict', 1))
+        self.assertIn('docs/middle.md', [c.get('replacement') for c in result['conflicts']])
+
+    def test_superseded_chain_through_out_of_scope_document(self):
+        self.put('docs/scope/old.md', '<!-- context: superseded-by=docs/middle.md -->\n# policy\npolicy old\n')
+        self.put('docs/middle.md', '<!-- context: superseded-by=docs/new.md -->\n# policy\npolicy middle\n')
+        self.put('docs/new.md', '# policy\npolicy new\n')
+        result, code = self.select('policy', paths=['AGENTS.md', 'docs/scope'])
+        self.assertEqual((result['status'], code), ('conflict', 1))
+        self.assertIn('docs/middle.md', [c.get('replacement') for c in result['conflicts']])
 
     def test_evaluation_smoke_gold_outside_corpus(self):
         script = Path(__file__).with_name('measure_context_select.py')
