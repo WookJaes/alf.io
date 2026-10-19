@@ -166,17 +166,35 @@ class ContextTests(unittest.TestCase):
         self.save_config()
         self.assertEqual(self.selector().verify('test')[0]['status'], 'stale')
 
-    def test_repository_rule_document_outranks_records(self):
-        # 실제 저장소: PR 본문 수정 금지의 원 규칙이 과거 작업 기록보다 앞서 선택된다.
-        root = TOOL.parents[2]
-        with mock.patch.object(context.Selector, 'write'):
-            result, _ = context.Selector(root).select('rule-priority', 'PR 리뷰 양식과 PR 본문 수정 금지 규칙', max_sections=3)
-        searched = [s for s in result['sections'] if not s['mandatory']]
-        rule = [i for i, s in enumerate(searched)
-                if s['path'] == 'ai/roles/review.md' and s['heading_path'].endswith('PR 본문 보존')]
-        self.assertTrue(rule, [s['id'] for s in searched])
-        records = [i for i, s in enumerate(searched) if s['path'].startswith('docs/harness/records/')]
-        self.assertTrue(all(i > rule[0] for i in records))
+    def test_pr_rule_document_outranks_records(self):
+        # 실제 저장소의 문서 수·내용과 무관하게 원 규칙 우선순위를 검증한다.
+        goal = 'PR 리뷰 양식과 PR 본문 수정 금지 규칙'
+        rule_path = 'ai/roles/review.md'
+        history_path = 'docs/harness/records/pr-review.md'
+        self.put(rule_path, '# PR 본문 보존\nPR 본문 수정 금지 규칙을 따른다.\n')
+        self.put('ai/templates/pr-review.md', '# PR 리뷰 양식\nPR 리뷰 양식과 작성 절차.\n')
+        self.put('ai/templates/pr-review-reply.md', '# PR 대댓글\nPR 리뷰 대댓글 양식과 작성 절차.\n')
+        self.put(history_path, '# ' + goal + '\n' + (goal + '\n') * 8)
+
+        for limit in (3, 4):
+            with self.subTest(max_sections=limit):
+                result, code = self.select(goal, max_sections=limit)
+                self.assertEqual((result['status'], code), ('ready', 0))
+                searched = [s for s in result['sections'] if not s['mandatory']]
+                rule = next(s for s in searched if s['path'] == rule_path)
+                self.assertEqual(rule['heading_path'], 'PR 본문 보존')
+                if limit == 3:
+                    self.assertEqual(len(searched), 3)
+                    self.assertFalse(any(s['path'] == history_path for s in searched))
+                    history = next(s for s in result['skipped'] if s['path'] == history_path)
+                    self.assertEqual(history['reason'], 'max_sections')
+                else:
+                    # 기록도 실제 선택해 빈 목록에 대한 우선순위 검증을 피한다.
+                    history = next(s for s in searched if s['path'] == history_path)
+                    self.assertEqual(len(searched), 4)
+                    self.assertEqual(searched[-1]['path'], history_path)
+                # 단순 점수 정렬로 바뀌면 고득점 이력이 원 규칙을 밀어내므로 실패해야 한다.
+                self.assertGreater(history['score'], rule['score'])
 
     def test_superseded(self):
         self.put('docs/old.md', '<!-- context: superseded-by=docs/cancel.md -->\n# 예약 취소\n예전 절차\n')
