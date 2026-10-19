@@ -714,6 +714,7 @@ val e2eValidation = tasks.register<Test>("e2eValidation") {
         includeTestsMatching("alfio.e2e.ValidationBrowserTest")
         includeTestsMatching("alfio.e2e.BillingDocumentDownloadE2ETest")
         includeTestsMatching("alfio.e2e.AttendeeReconciliationE2ETest")
+        includeTestsMatching("alfio.e2e.MapImageSecurityE2ETest")
     }
     environment("ALFIO_RUN_E2E", "true")
     outputs.upToDateWhen { false }

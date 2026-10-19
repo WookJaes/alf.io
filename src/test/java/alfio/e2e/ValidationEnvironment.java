@@ -54,6 +54,14 @@ public final class ValidationEnvironment implements AutoCloseable {
     }
 
     public String startApp(Path jar, java.util.Map<String, String> validationEnvironment) throws Exception {
+        return startApp(jar, validationEnvironment, "NONE");
+    }
+
+    public String startMapApp(Path jar, alfio.model.system.ConfigurationKeys.GeoInfoProvider provider) throws Exception {
+        return startApp(jar, java.util.Map.of(), provider.name());
+    }
+
+    private String startApp(Path jar, java.util.Map<String, String> validationEnvironment, String mapProvider) throws Exception {
         if (validationEnvironment.keySet().stream().anyMatch(k -> !k.startsWith("ALFIO_ATTENDEEASSISTANT_"))) {
             throw new IllegalArgumentException("Only attendee-assistant validation configuration is allowed");
         }
@@ -78,8 +86,12 @@ public final class ValidationEnvironment implements AutoCloseable {
             "--datasource.username=alfio_user", "--datasource.password=password",
             "--alfio.override.system.settings[BASE_URL]=" + baseUrl,
             "--alfio.override.system.settings[MAILER_TYPE]=disabled",
-            "--alfio.override.system.settings[MAPS_PROVIDER]=NONE")
+            "--alfio.override.system.settings[MAPS_PROVIDER]=" + mapProvider)
             .redirectErrorStream(true).redirectOutput(log.toFile());
+        if (!mapProvider.equals("NONE")) {
+            builder.command().add("--alfio.override.system.settings[MAPS_CLIENT_API_KEY]=synthetic-map-key");
+            builder.command().add("--alfio.override.system.settings[MAPS_HERE_API_KEY]=synthetic-map-key");
+        }
         builder.directory(temporaryDirectory.toFile());
         // Isolate local Spring configuration files and external provider/database credentials.
         builder.environment().clear();

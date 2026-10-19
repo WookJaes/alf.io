@@ -21,16 +21,22 @@ import alfio.manager.system.ConfigurationManager;
 import alfio.model.modification.support.LocationDescriptor;
 import alfio.model.system.ConfigurationKeys;
 import com.moodysalem.TimezoneMapper;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.time.ZoneId;
 import java.util.*;
+import java.util.regex.Pattern;
 
 import static alfio.model.system.ConfigurationKeys.*;
 
@@ -39,6 +45,7 @@ import static alfio.model.system.ConfigurationKeys.*;
 public class LocationApiController {
 
     private static final Logger log = LoggerFactory.getLogger(LocationApiController.class);
+    private static final Pattern COORDINATE = Pattern.compile("[+-]?(?:[0-9]+(?:[.][0-9]*)?|[.][0-9]+)(?:[eE][+-]?[0-9]+)?");
     private final ConfigurationManager configurationManager;
 
     @Autowired
@@ -69,10 +76,68 @@ public class LocationApiController {
 
 
     @GetMapping("/location/static-map-image")
-    public String getMapImage(
+    public ResponseEntity<String> getMapImage(
         @RequestParam(name = "lat", required = false) String lat,
-        @RequestParam(name = "lng", required = false) String lng) {
-        return LocationDescriptor.getMapUrl(lat, lng, getGeoConf());
+        @RequestParam(name = "lng", required = false) String lng,
+        HttpServletRequest request) {
+        String accept = String.join(",", Collections.list(request.getHeaders(HttpHeaders.ACCEPT)));
+        MediaType responseType = mapResponseType(accept.isBlank() ? MediaType.ALL_VALUE : accept);
+        if (responseType == null) {
+            // Do not use sendError: the full app renders it as an HTML error page.
+            return ResponseEntity.status(HttpStatus.NOT_ACCEPTABLE).contentType(MediaType.TEXT_PLAIN).build();
+        }
+        String latitude = normalizeCoordinate(lat, 90);
+        String longitude = normalizeCoordinate(lng, 180);
+        if (latitude == null || longitude == null) {
+            return ResponseEntity.badRequest().contentType(MediaType.TEXT_PLAIN).body("Invalid map coordinates");
+        }
+        try {
+            return ResponseEntity.ok().contentType(responseType).body(LocationDescriptor.getMapUrl(latitude, longitude, getGeoConf()));
+        } catch (RuntimeException e) {
+            // Do not let the common handler reflect configuration or provider errors into this response.
+            log.error("Unable to generate static map URL", e);
+            return ResponseEntity.internalServerError().contentType(MediaType.TEXT_PLAIN).body("Unable to generate map URL");
+        }
+    }
+
+    private static MediaType mapResponseType(String accept) {
+        try {
+            var requested = MediaType.parseMediaTypes(accept);
+            MediaType selected = null;
+            double quality = 0;
+            for (var supported : List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_PLAIN)) {
+                MediaType match = null;
+                for (var range : requested) {
+                    if (range.isCompatibleWith(supported) && (match == null || range.removeQualityValue().isMoreSpecific(match.removeQualityValue()))) {
+                        match = range;
+                    }
+                }
+                // A specific q=0 excludes that format even if a wildcard would otherwise allow it.
+                if (match != null && match.getQualityValue() > quality) {
+                    selected = supported;
+                    quality = match.getQualityValue();
+                }
+            }
+            return selected;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private static String normalizeCoordinate(String coordinate, int limit) {
+        if (coordinate == null || coordinate.length() > 64 || !COORDINATE.matcher(coordinate).matches()) {
+            return null;
+        }
+        try {
+            double value = Double.parseDouble(coordinate);
+            // Decimal comparison also rejects out-of-range values that round to a valid double boundary.
+            if (!Double.isFinite(value) || new BigDecimal(coordinate).abs().compareTo(BigDecimal.valueOf(limit)) > 0) {
+                return null;
+            }
+            return Double.toString(value);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private Map<ConfigurationKeys, ConfigurationManager.MaybeConfiguration> getGeoConf() {
