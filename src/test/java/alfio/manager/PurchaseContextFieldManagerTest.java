@@ -69,6 +69,53 @@ class PurchaseContextFieldManagerTest {
 
     @ParameterizedTest
     @NullAndEmptySource
+    void rejectsRequiredRadioWithoutOptions(List<EventModification.RestrictedValue> options) {
+        var request = create("radio", true, options);
+        var result = validateAdditionalFields(List.of(), request, new BeanPropertyBindingResult(request, "field"));
+        assertFalse(result.isSuccess());
+        assertEquals("restrictedValues", result.getValidationErrors().getFirst().getFieldName());
+        assertThrows(IllegalArgumentException.class, () -> manager.insertAdditionalField(mock(Event.class), request, 0));
+    }
+
+    @Test
+    void rejectsBlankAndDisabledRadioOnCreation() {
+        for (var option : List.of(new EventModification.RestrictedValue(" ", true),
+            new EventModification.RestrictedValue("blue", false))) {
+            var request = create("radio", true, List.of(option));
+            assertFalse(validateAdditionalFields(List.of(), request, new BeanPropertyBindingResult(request, "field")).isSuccess());
+            assertThrows(IllegalArgumentException.class, () -> manager.insertAdditionalField(mock(Event.class), request, 0));
+        }
+    }
+
+    @Test
+    void rejectsRequiredRadioUpdateWithoutSelectableOptions() {
+        var existing = mock(PurchaseContextFieldConfiguration.class);
+        when(existing.getType()).thenReturn("radio");
+        when(repository.findById(42)).thenReturn(existing);
+
+        for (var request : List.of(update("radio", true, null, List.of()),
+            update("radio", true, List.of(), List.of()), update("radio", true, List.of(" "), List.of()),
+            update("select", true, List.of("blue"), List.of()), update("input:text", true, List.of("blue"), List.of()))) {
+            assertThrows(IllegalArgumentException.class, () -> manager.updateAdditionalField(42, request, 1));
+        }
+        assertThrows(IllegalArgumentException.class, () -> manager.updateAdditionalField(42, update("radio", true, List.of("blue"), List.of("blue")), 1));
+
+        verify(repository, never()).updateField(anyLong(), anyBoolean(), anyBoolean(), any(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    void acceptsRequiredRadioWithSelectableOption() {
+        var request = create("radio", true, List.of(new EventModification.RestrictedValue("blue", true)));
+        assertTrue(validateAdditionalFields(List.of(), request, new BeanPropertyBindingResult(request, "field")).isSuccess());
+        var existing = mock(PurchaseContextFieldConfiguration.class);
+        when(existing.getType()).thenReturn("radio");
+        when(repository.findById(42)).thenReturn(existing);
+        manager.updateAdditionalField(42, update("radio", true, List.of("blue", "red"), List.of("red")), 1);
+        verify(repository).updateField(42, true, true, "[\"blue\",\"red\"]", "[\"red\"]", null, false);
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
     void rejectsRemovingEveryOptionOnUpdate(List<String> options) {
         existingSelect();
         assertThrows(IllegalArgumentException.class, () -> manager.updateAdditionalField(42, update("select", true, options, List.of()), 1));
@@ -103,7 +150,7 @@ class PurchaseContextFieldManagerTest {
     @Test
     void preservesOptionalDropdownAndOtherFieldTypes() {
         for (var type : List.of("select", "input:text", "country", "checkbox", "radio")) {
-            boolean required = !type.equals("select");
+            boolean required = !List.of("select", "radio").contains(type);
             var request = create(type, required, List.of());
             assertTrue(validateAdditionalFields(List.of(), request, new BeanPropertyBindingResult(request, "field")).isSuccess(), type);
             var existing = mock(PurchaseContextFieldConfiguration.class);

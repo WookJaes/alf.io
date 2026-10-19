@@ -160,7 +160,7 @@ public class EventApiV1Controller {
                     return false;
                 }
                 var field = f.toAdditionalField(0);
-                return Validator.isValidRequiredDropdown(field.getType(), field.isRequired(), field);
+                return Validator.isValidRequiredSingleChoice(field.getType(), field.isRequired(), field);
             });
     }
 

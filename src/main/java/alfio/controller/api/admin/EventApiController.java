@@ -272,7 +272,7 @@ public class EventApiController {
                 errors.rejectValue(prefix + ".name", "error.required");
             }
             //TODO: check label value is present for all the locales
-            if (!Validator.isValidRequiredDropdown(field.getType(), field.isRequired(), field)) {
+            if (!Validator.isValidRequiredSingleChoice(field.getType(), field.isRequired(), field)) {
                 errors.rejectValue(prefix + ".restrictedValues", "error.required");
             }
 

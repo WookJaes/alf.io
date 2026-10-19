@@ -31,7 +31,8 @@ import alfio.test.util.AlfioIntegrationTest;
 import alfio.test.util.IntegrationTestUtil;
 import alfio.util.Json;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
@@ -76,11 +77,12 @@ class AdditionalFieldApiControllerIntegrationTest {
             .setMessageConverters(new JacksonJsonHttpMessageConverter(Json.OBJECT_MAPPER)).build();
     }
 
-    @Test
-    void rejectsEmptyRequiredDropdownCreationWithoutPersistingIt() throws Exception {
-        for (var options : List.of(List.of(), List.of(Map.of("value", " ", "enabled", true)))) {
+    @ParameterizedTest
+    @ValueSource(strings = {"select", "radio"})
+    void rejectsEmptyRequiredSingleChoiceCreationWithoutPersistingIt(String type) throws Exception {
+        for (var options : List.of(List.of(), List.of(Map.of("value", " ", "enabled", true)), List.of(Map.of("value", "blue", "enabled", false)))) {
             var response = mvc.perform(post(endpoint + "/new").principal(owner).contentType(MediaType.APPLICATION_JSON)
-                .content(Json.toJson(createBody(true, options)))).andExpect(status().isOk()).andReturn();
+                .content(Json.toJson(createBody(type, true, options)))).andExpect(status().isOk()).andReturn();
             var result = Json.OBJECT_MAPPER.readTree(response.getResponse().getContentAsString());
             assertFalse(result.path("success").asBoolean());
             assertEquals("restrictedValues", result.path("validationErrors").get(0).path("fieldName").asString());
@@ -88,14 +90,17 @@ class AdditionalFieldApiControllerIntegrationTest {
         }
     }
 
-    @Test
-    void rejectsInvalidUpdatesAndPreservesStoredOptionsAndRequiredFlag() throws Exception {
-        createField(true, List.of(Map.of("value", "blue", "enabled", true)));
+    @ParameterizedTest
+    @ValueSource(strings = {"select", "radio"})
+    void rejectsInvalidUpdatesAndPreservesStoredOptionsAndRequiredFlag(String type) throws Exception {
+        createField(type, true, List.of(Map.of("value", "blue", "enabled", true)));
         var id = fieldRepository.findAdditionalFieldsForEvent(event.getId()).getFirst().getId();
         for (var body : List.of(
-            Map.of("type", "select", "required", true, "restrictedValues", List.of(), "description", Map.of()),
+            Map.of("type", type, "required", true, "description", Map.of()),
+            Map.of("type", type, "required", true, "restrictedValues", List.of(" "), "description", Map.of()),
+            Map.of("type", type, "required", true, "restrictedValues", List.of(), "description", Map.of()),
             Map.of("type", "input:text", "required", true, "restrictedValues", List.of("blue"), "description", Map.of()),
-            Map.of("type", "select", "required", true, "restrictedValues", List.of("blue"), "disabledValues", List.of("blue"), "description", Map.of()))) {
+            Map.of("type", type, "required", true, "restrictedValues", List.of("blue"), "disabledValues", List.of("blue"), "description", Map.of()))) {
             mvc.perform(post(endpoint + "/" + id).principal(owner).contentType(MediaType.APPLICATION_JSON)
                 .content(Json.toJson(body))).andExpect(status().isBadRequest());
             var saved = fieldRepository.findById(id);
@@ -104,29 +109,39 @@ class AdditionalFieldApiControllerIntegrationTest {
             assertTrue(saved.getDisabledValues().isEmpty());
         }
         mvc.perform(post(endpoint + "/" + id).principal(owner).contentType(MediaType.APPLICATION_JSON)
-            .content(Json.toJson(Map.of("type", "select", "required", true, "restrictedValues", List.of("blue", "green"), "description", Map.of()))))
+            .content(Json.toJson(Map.of("type", type, "required", true, "restrictedValues", List.of("blue", "green"), "description", Map.of()))))
             .andExpect(status().isOk());
         assertEquals(List.of("blue", "green"), fieldRepository.findById(id).getRestrictedValues());
     }
 
-    @Test
-    void allowsOptionalEmptyDropdownButRejectsMakingItRequired() throws Exception {
-        createField(false, List.of());
+    @ParameterizedTest
+    @ValueSource(strings = {"select", "radio"})
+    void allowsOptionalEmptySingleChoiceButRejectsMakingItRequired(String type) throws Exception {
+        createField(type, false, List.of());
         var id = fieldRepository.findAdditionalFieldsForEvent(event.getId()).getFirst().getId();
         mvc.perform(post(endpoint + "/" + id).principal(owner).contentType(MediaType.APPLICATION_JSON)
-            .content(Json.toJson(Map.of("type", "select", "required", true, "description", Map.of()))))
+            .content(Json.toJson(Map.of("type", type, "required", true, "description", Map.of()))))
             .andExpect(status().isBadRequest());
         assertFalse(fieldRepository.findById(id).isRequired());
     }
 
-    private void createField(boolean required, List<?> options) throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"select", "radio"})
+    void preservesDisabledOptionsWhenCreatingValidSingleChoice(String type) throws Exception {
+        createField(type, true, List.of(Map.of("value", "blue", "enabled", true), Map.of("value", "red", "enabled", false)));
+        var field = fieldRepository.findAdditionalFieldsForEvent(event.getId()).getFirst();
+        assertEquals(List.of("blue", "red"), field.getRestrictedValues());
+        assertEquals(List.of("red"), field.getDisabledValues());
+    }
+
+    private void createField(String type, boolean required, List<?> options) throws Exception {
         var response = mvc.perform(post(endpoint + "/new").principal(owner).contentType(MediaType.APPLICATION_JSON)
-            .content(Json.toJson(createBody(required, options)))).andExpect(status().isOk()).andReturn();
+            .content(Json.toJson(createBody(type, required, options)))).andExpect(status().isOk()).andReturn();
         assertTrue(Json.OBJECT_MAPPER.readTree(response.getResponse().getContentAsString()).path("success").asBoolean());
     }
 
-    private static Map<String, Object> createBody(boolean required, List<?> options) {
-        return Map.of("name", "synthetic_dropdown", "type", "select", "required", required,
+    private static Map<String, Object> createBody(String type, boolean required, List<?> options) {
+        return Map.of("name", "synthetic_dropdown", "type", type, "required", required,
             "restrictedValues", options, "description", Map.of("en", Map.of("label", "Synthetic dropdown")));
     }
 }

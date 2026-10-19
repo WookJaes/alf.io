@@ -46,6 +46,9 @@ interface FieldRepository {
                                                      @Bind("categoryIds") String categoryIdsJson,
                                                      @Bind("displayAtCheckIn") boolean displayAtCheckIn);
 
+    @Query("update purchase_context_field_configuration set field_disabled_values = :disabledValues where id = :id")
+    int updateDisabledValues(@Bind("id") long id, @Bind("disabledValues") String disabledValues);
+
     @Query("""
         update purchase_context_field_configuration set
          field_required = :required,

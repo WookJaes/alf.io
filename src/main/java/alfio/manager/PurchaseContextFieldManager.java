@@ -109,8 +109,8 @@ public class PurchaseContextFieldManager {
     }
 
     public void insertAdditionalField(PurchaseContext purchaseContext, AdditionalFieldRequest f, int order) {
-        Validate.isTrue(Validator.isValidRequiredDropdown(f.getType(), f.isRequired(), f),
-            "Add at least one selectable option for a required dropdown.");
+        Validate.isTrue(Validator.isValidRequiredSingleChoice(f.getType(), f.isRequired(), f),
+            "Add at least one selectable option for a required dropdown or radio button field.");
         String serializedRestrictedValues = toSerializedRestrictedValues(f);
         int additionalServiceId = -1;
         Context context;
@@ -125,14 +125,17 @@ public class PurchaseContextFieldManager {
 
         long configurationId = purchaseContextFieldRepository.insertConfiguration(eventIdOrNull(purchaseContext), purchaseContext.getOrganizationId(), descriptorIdOrNull(purchaseContext), f.getName(), order, f.getType(), serializedRestrictedValues,
             f.getMaxLength(), f.getMinLength(), f.isRequired(), context, additionalServiceId, generateJsonForList(f.getLinkedCategoriesIds()), f.isDisplayAtCheckIn()).getKey();
+        if (!f.getDisabledValuesAsString().isEmpty()) {
+            purchaseContextFieldRepository.updateDisabledValues(configurationId, toSerializedDisabledValues(f));
+        }
         f.getDescription().forEach((locale, value) -> purchaseContextFieldRepository.upsertDescription(configurationId, locale, Json.GSON.toJson(value), purchaseContext.getOrganizationId()));
     }
 
     public void updateAdditionalField(long id, EventModification.UpdateAdditionalField f, int organizationId) {
         // The field type is immutable: validate against the stored type, not the request's type.
         var existing = purchaseContextFieldRepository.findById(id);
-        Validate.isTrue(Validator.isValidRequiredDropdown(existing.getType(), f.isRequired(), f),
-            "Add at least one selectable option for a required dropdown.");
+        Validate.isTrue(Validator.isValidRequiredSingleChoice(existing.getType(), f.isRequired(), f),
+            "Add at least one selectable option for a required dropdown or radio button field.");
         String serializedRestrictedValues = toSerializedRestrictedValues(f);
         purchaseContextFieldRepository.updateField(id, f.isRequired(), !f.isReadOnly(), serializedRestrictedValues, toSerializedDisabledValues(f), generateJsonForList(f.getLinkedCategoriesIds()), f.isDisplayAtCheckIn());
         f.getDescription().forEach((locale, value) -> {
