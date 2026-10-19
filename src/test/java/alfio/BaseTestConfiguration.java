@@ -42,7 +42,6 @@ import org.testcontainers.containers.GenericContainer;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintWriter;
-import java.net.http.HttpClient;
 import java.nio.charset.Charset;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -112,7 +111,7 @@ public class BaseTestConfiguration {
 
     @Bean
     public FileDownloadManager fileDownloadManager() {
-        return new FileDownloadManager(HttpClient.newHttpClient()) {
+        return new FileDownloadManager() {
             @Override
             public DownloadedFile downloadFile(String url) {
                 return new DownloadedFile(BaseIntegrationTest.ONE_PIXEL_BLACK_GIF, "test", "image/gif");

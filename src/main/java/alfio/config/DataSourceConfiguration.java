@@ -232,8 +232,8 @@ public class DataSourceConfiguration {
 
     @Bean
     @Profile("!"+Initializer.PROFILE_INTEGRATION_TEST)
-    public FileDownloadManager fileDownloadManager(HttpClient httpClient) {
-        return new FileDownloadManager(httpClient);
+    public FileDownloadManager fileDownloadManager() {
+        return new FileDownloadManager();
     }
 
     @Bean
