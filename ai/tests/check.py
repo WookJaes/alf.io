@@ -10,7 +10,8 @@ REQUIRED = ('AGENTS.md', 'ai/WORKFLOW.md', 'ai/routing.md',
             'ai/templates/work.md', 'ai/templates/failure.md',
             'ai/templates/memory.md', 'ai/memory/index.md',
             'docs/harness/README.md', 'docs/harness/local-validation.md',
-            'ai/harness/run.py', 'ai/tests/test_run.py')
+            'ai/harness/run.py', 'ai/tests/test_run.py',
+            'ai/harness/context_select.py', 'docs/harness/context-selection.md')
 
 
 def local_targets(document):
