@@ -14,14 +14,17 @@ import tempfile
 import time
 import unicodedata
 
-VERSION = '5'
+VERSION = '6'
 FORMAT = 'context-selection/1'
 DEFAULTS = {
     'version': 1, 'allowed_paths': ['AGENTS.md', 'README.md', 'ai', 'docs'],
     'exclude': ['ai/local-state', 'ai/local-evidence'], 'extensions': ['.md', '.txt'],
     'mandatory': ['AGENTS.md'], 'budget_chars': 24000,
     'max_section_chars': 4000, 'max_file_bytes': 1048576,
+    'history_paths': ['docs/harness/records'],
 }
+# 이전 설정과 호환되도록 생략할 수 있는 키와 생략 시 값.
+OPTIONAL = {'history_paths': []}
 WORDS = re.compile(r'[0-9a-z_]+|[가-힣]+')
 STOP = {'the', 'a', 'an', 'and', 'or', 'to', 'of', 'in', 'for', 'with', '및', '과', '와'}
 COVERAGE_STOP = {'때', '것', '수', '등', '방법', '절차', '경우', '관련', '내용', '각각',
@@ -207,14 +210,17 @@ class Selector:
 
     def validate_config(self):
         config = self.config
-        if not isinstance(config, dict) or set(config) != set(DEFAULTS) or type(config.get('version')) is not int or config['version'] != 1:
+        if (not isinstance(config, dict) or not set(DEFAULTS) - set(OPTIONAL) <= set(config) <= set(DEFAULTS)
+                or type(config.get('version')) is not int or config['version'] != 1):
             raise Invalid('설정 키 또는 version이 잘못되었습니다.')
-        for key in ('allowed_paths', 'exclude', 'extensions', 'mandatory'):
+        for key, value in OPTIONAL.items():
+            config.setdefault(key, list(value))
+        for key in ('allowed_paths', 'exclude', 'extensions', 'mandatory', 'history_paths'):
             if not isinstance(config[key], list) or not all(isinstance(x, str) for x in config[key]):
                 raise Invalid('문자열 배열이 필요합니다: ' + key)
         if not config['allowed_paths'] or not config['extensions']:
             raise Invalid('허용 경로와 확장자는 비어 있을 수 없습니다.')
-        for key in ('allowed_paths', 'exclude'):
+        for key in ('allowed_paths', 'exclude', 'history_paths'):
             for value in config[key]:
                 relative(value)
             config[key] = sorted(set(config[key]))
@@ -527,14 +533,20 @@ class Selector:
                     matches.append(token)
             return value, sorted(matches), bool(wanted & title_tokens)
 
+        history = {p for p in search_entries if self.allowed(p, self.config['history_paths'])}
+
         def rank(wanted):
-            ranked = []
+            # 작업 기록 같은 이력 문서는 원 규칙·안내 후보 뒤에 둔다. 점수 기준은 묶음별로 적용한다.
+            groups = ([], [])
             for item in search_sections:
                 value, matches, title_match = score(item, wanted)
                 if matches:
-                    ranked.append((value, item, matches, title_match))
-            ranked.sort(key=lambda r: (-r[0], r[1]['path'], r[1]['start_line']))
-            return [r for r in ranked if r[0] >= ranked[0][0] * 0.25] if ranked else []
+                    groups[item['path'] in history].append((value, item, matches, title_match))
+            ranked = []
+            for group in groups:
+                group.sort(key=lambda r: (-r[0], r[1]['path'], r[1]['start_line']))
+                ranked += [r for r in group if r[0] >= group[0][0] * 0.25] if group else []
+            return ranked
 
         selected, used = {}, 0
 
@@ -570,7 +582,8 @@ class Selector:
                         skipped.append({'id': item['id'], 'path': item['path'], 'score': round(value, 6),
                                         'needed_chars': item['chars'], 'reason': 'max_sections'})
                     continue
-                add(item, value, '일치 용어: %s; 제목 일치: %s' % (', '.join(matches), '예' if title_match else '아니오'))
+                add(item, value, '일치 용어: %s; 제목 일치: %s%s' % (', '.join(matches), '예' if title_match else '아니오',
+                                                                  '; 이력 문서(후순위)' if item['path'] in history else ''))
         include(ranked)
 
         def uncovered():
