@@ -571,37 +571,38 @@ class Selector:
         ranked = rank(query_tokens)
         candidates = {r[1]['id']: r for r in ranked}
 
-        def include(rows, dry=False):
-            """예산·구간 수 안의 후보를 선택한다. dry는 상태를 바꾸지 않고 들어갈 구간만 돌려준다."""
-            size, count, fitted = used, sum(not s['mandatory'] for s in selected.values()), {}
+        def include(rows):
             for value, item, matches, title_match in rows:
-                if item['id'] in selected or item['id'] in fitted:
+                if item['id'] in selected:
                     continue
-                reason = ('budget_exceeded' if size + item['chars'] > budget
-                          else 'max_sections' if count >= max_sections else None)
-                if reason:
-                    if not dry and not any(x['id'] == item['id'] for x in skipped):
+                if used + item['chars'] > budget:
+                    if not any(x['id'] == item['id'] for x in skipped):
                         skipped.append({'id': item['id'], 'path': item['path'], 'score': round(value, 6),
-                                        'needed_chars': item['chars'], 'reason': reason})
+                                        'needed_chars': item['chars'], 'reason': 'budget_exceeded'})
                     continue
-                fitted[item['id']] = item
-                size, count = size + item['chars'], count + 1
-                if not dry:
-                    add(item, value, '일치 용어: %s; 제목 일치: %s%s' % (', '.join(matches), '예' if title_match else '아니오',
-                                                                      '; 이력 문서(후순위)' if item['path'] in history else ''))
-            return list(fitted.values())
+                if sum(not s['mandatory'] for s in selected.values()) >= max_sections:
+                    if not any(x['id'] == item['id'] for x in skipped):
+                        skipped.append({'id': item['id'], 'path': item['path'], 'score': round(value, 6),
+                                        'needed_chars': item['chars'], 'reason': 'max_sections'})
+                    continue
+                add(item, value, '일치 용어: %s; 제목 일치: %s%s' % (', '.join(matches), '예' if title_match else '아니오',
+                                                                  '; 이력 문서(후순위)' if item['path'] in history else ''))
 
         def tier(rows, past=False):
             return [r for r in rows if (r[1]['path'] in history) == past]
 
-        def uncovered(extra=()):
-            body = '\n'.join(s['text'].lower() for s in list(selected.values()) + list(extra))
+        def uncovered():
+            body = '\n'.join(s['text'].lower() for s in selected.values())
             return [word for word in query_terms if not covered(word, body)]
 
-        # 이력 문서는 원 문서의 1·2차 탐색이 끝난 뒤 남은 자리만 채운다.
+        # 원 문서를 먼저 고르고, 1차 이력 문서는 원 문서가 덮지 못한 질의어를 새로 덮을 때만 먼저 넣는다.
+        # 그래서 이력이 근거 커버리지를 넓히는 경우는 유지하고, 나머지 이력은 2차 탐색 뒤 남은 자리만 채운다.
         include(tier(ranked))
-        # 2차 탐색은 들어갈 수 있는 1차 이력 문서로도 덮이지 않는 질의어에만 실행한다.
-        missing = uncovered(include(tier(ranked, True), dry=True))
+        for row in tier(ranked, True):
+            text = row[1]['text'].lower()
+            if any(covered(word, text) for word in uncovered()):
+                include([row])
+        missing = uncovered()
         rounds, second = 0, []
         if missing:
             rounds = 1

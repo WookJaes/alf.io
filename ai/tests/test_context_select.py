@@ -123,6 +123,18 @@ class ContextTests(unittest.TestCase):
                          ['docs/alpha.md', 'docs/harness/records/alpha.md'])
         self.assertEqual((result['followup_rounds'], result['skipped_total']), (0, 0))
 
+    def test_history_with_unique_coverage_keeps_its_slot(self):
+        # 원 문서가 덮지 못한 질의어를 덮는 이력은 2차 탐색의 같은 주제 원 문서들에 밀리지 않는다.
+        filler = 'filler text here\n' * 40
+        self.put('docs/alpha.md', '# alpha\nalpha alpha rule\n')
+        self.put('docs/harness/records/beta.md', '# beta\nbeta beta record\n')
+        self.put('docs/g1.md', '# one\n' + filler + 'gamma once\n')
+        self.put('docs/g2.md', '# two\n' + filler + 'gamma twice\n')
+        result, code = self.select('alpha beta gamma', max_sections=3)
+        self.assertEqual((result['status'], code), ('ready', 0))
+        self.assertEqual([s['path'] for s in result['sections'] if not s['mandatory']],
+                         ['docs/alpha.md', 'docs/harness/records/beta.md', 'docs/g1.md'])
+
     def test_followup_history_for_remaining_terms(self):
         filler = ''.join('line %d filler text here\n' % i for i in range(40))
         self.put('docs/alpha.md', '# alpha\nalpha alpha rule\n')
