@@ -69,6 +69,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.util.Assert;
 import org.springframework.util.StreamUtils;
+import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.Errors;
 import org.springframework.web.bind.annotation.*;
 import tools.jackson.dataformat.csv.CsvReadFeature;
@@ -271,7 +272,9 @@ public class EventApiController {
                 errors.rejectValue(prefix + ".name", "error.required");
             }
             //TODO: check label value is present for all the locales
-            //TODO: for select check option value+label
+            if (!Validator.isValidRequiredDropdown(field.getType(), field.isRequired(), field)) {
+                errors.rejectValue(prefix + ".restrictedValues", "error.required");
+            }
 
             return Validator.evaluateValidationResult(errors);
         }).reduce(ValidationResult::or).orElseGet(ValidationResult::success);
@@ -291,10 +294,15 @@ public class EventApiController {
     }
 
     @PostMapping("/events/new")
-    public String insertEvent(@RequestBody EventModification eventModification, Principal principal) {
+    public ResponseEntity<String> insertEvent(@RequestBody EventModification eventModification, Principal principal) {
         accessService.checkOrganizationOwnership(principal, eventModification.getOrganizationId());
+        var errors = new BeanPropertyBindingResult(eventModification, "event");
+        var validation = validateAdditionalTicketFields(eventModification.getTicketFields(), errors);
+        if (!validation.isSuccess()) {
+            return ResponseEntity.badRequest().contentType(MediaType.APPLICATION_JSON).body(Json.toJson(validation));
+        }
         eventManager.createEvent(eventModification, principal.getName());
-        return OK;
+        return ResponseEntity.ok(OK);
     }
 
     @PutMapping("/events/{id}/status")
