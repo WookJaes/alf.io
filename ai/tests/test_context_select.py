@@ -75,6 +75,109 @@ class ContextTests(unittest.TestCase):
         result, _ = self.select()
         self.assertEqual(next(s['path'] for s in result['sections'] if not s['mandatory']), 'docs/cancel.md')
 
+    def put_history(self):
+        # 작업 기록이 제목·본문 모두에서 원 규칙보다 질의어를 많이 포함한다.
+        self.put('docs/harness/records/2026-01-01-cancel.md',
+                 '# 예약 취소 절차 작업 기록\n예약 취소 절차를 바꾸고 예약 취소 절차를 검증했다.\n')
+
+    def test_history_ranks_after_rule_documents(self):
+        self.put_history()
+        result, code = self.select('예약 취소 절차', max_sections=1)
+        self.assertEqual((result['status'], code), ('ready', 0))
+        self.assertEqual([s['path'] for s in result['sections'] if not s['mandatory']], ['docs/cancel.md'])
+        skipped = next(s for s in result['skipped'] if s['path'].startswith('docs/harness/records/'))
+        self.assertGreater(skipped['score'], next(s['score'] for s in result['sections'] if s['path'] == 'docs/cancel.md'))
+
+    def test_history_still_selected_without_rule_match(self):
+        self.put_history()
+        result, code = self.select('작업 기록 검증')
+        self.assertEqual((result['status'], code), ('ready', 0))
+        history = [s for s in result['sections'] if s['path'].startswith('docs/harness/records/')]
+        self.assertTrue(history)
+        self.assertTrue(all('이력 문서(후순위)' in s['reason'] for s in history))
+        self.assertTrue(all('이력 문서' not in s['reason'] for s in result['sections'] if s not in history))
+
+    def test_history_waits_for_followup_rule_documents(self):
+        # 2차 탐색에서만 찾는 원 규칙을 1차 탐색의 이력 문서가 밀어내지 않는다.
+        filler = ''.join('line %d filler text here\n' % i for i in range(40))
+        self.put('docs/alpha.md', '# alpha\nalpha alpha rule\n')
+        self.put('docs/beta.md', '# guide\n' + filler + 'beta once\n')
+        self.put('docs/harness/records/2026-01-01-alpha.md', '# record\n' + filler + 'alpha once\n')
+        for option in ({'max_sections': 2}, {'budget': 2000}):
+            with self.subTest(option=option):
+                result, code = self.select('alpha beta', **option)
+                self.assertEqual((result['status'], code), ('ready', 0))
+                self.assertEqual([s['path'] for s in result['sections'] if not s['mandatory']],
+                                 ['docs/alpha.md', 'docs/beta.md'])
+                self.assertEqual(result['followup_rounds'], 1)
+
+    def test_history_coverage_skips_needless_followup(self):
+        # 들어갈 1차 이력 문서가 남은 질의어를 덮으면 2차 탐색으로 이력 후보를 늘리지 않는다.
+        self.put('AGENTS.md', '# required\n' + 'neutral ' * 240 + '\n')
+        self.put('docs/alpha.md', '# alpha\nalpha alpha rule\n')
+        self.put('docs/harness/records/alpha.md', '# alpha\nalpha beta once\n')
+        self.put('docs/harness/records/other.md', '# guide\nline 0 filler text here\nbeta once\n')
+        result, code = self.select('alpha beta', budget=2000)
+        self.assertEqual((result['status'], code), ('ready', 0))
+        self.assertEqual([s['path'] for s in result['sections'] if not s['mandatory']],
+                         ['docs/alpha.md', 'docs/harness/records/alpha.md'])
+        self.assertEqual((result['followup_rounds'], result['skipped_total']), (0, 0))
+
+    def test_history_with_unique_coverage_keeps_its_slot(self):
+        # 원 문서가 덮지 못한 질의어를 덮는 이력은 2차 탐색의 같은 주제 원 문서들에 밀리지 않는다.
+        filler = 'filler text here\n' * 40
+        self.put('docs/alpha.md', '# alpha\nalpha alpha rule\n')
+        self.put('docs/harness/records/beta.md', '# beta\nbeta beta record\n')
+        self.put('docs/g1.md', '# one\n' + filler + 'gamma once\n')
+        self.put('docs/g2.md', '# two\n' + filler + 'gamma twice\n')
+        result, code = self.select('alpha beta gamma', max_sections=3)
+        self.assertEqual((result['status'], code), ('ready', 0))
+        self.assertEqual([s['path'] for s in result['sections'] if not s['mandatory']],
+                         ['docs/alpha.md', 'docs/harness/records/beta.md', 'docs/g1.md'])
+
+    def test_followup_history_for_remaining_terms(self):
+        filler = ''.join('line %d filler text here\n' % i for i in range(40))
+        self.put('docs/alpha.md', '# alpha\nalpha alpha rule\n')
+        self.put('docs/harness/records/beta.md', '# guide\n' + filler + 'beta once\n')
+        result, code = self.select('alpha beta')
+        self.assertEqual((result['status'], code), ('ready', 0))
+        self.assertEqual([s['path'] for s in result['sections'] if not s['mandatory']],
+                         ['docs/alpha.md', 'docs/harness/records/beta.md'])
+        self.assertEqual(result['followup_rounds'], 1)
+
+    def test_history_paths_explicit_scope(self):
+        self.put_history()
+        result, _ = self.select('예약 취소 절차', paths=['docs/harness/records'], max_sections=1)
+        self.assertEqual([s['path'] for s in result['sections'] if not s['mandatory']],
+                         ['docs/harness/records/2026-01-01-cancel.md'])
+
+    def test_history_paths_optional_for_older_configs(self):
+        self.put_history()
+        del self.config['history_paths']
+        self.save_config()
+        self.assertEqual(self.selector().config['history_paths'], [])
+        result, _ = self.select('예약 취소 절차', max_sections=1)
+        self.assertEqual([s['path'] for s in result['sections'] if not s['mandatory']],
+                         ['docs/harness/records/2026-01-01-cancel.md'])
+
+    def test_history_paths_change_invalidates_selection(self):
+        self.select()
+        self.config['history_paths'] = []
+        self.save_config()
+        self.assertEqual(self.selector().verify('test')[0]['status'], 'stale')
+
+    def test_repository_rule_document_outranks_records(self):
+        # 실제 저장소: PR 본문 수정 금지의 원 규칙이 과거 작업 기록보다 앞서 선택된다.
+        root = TOOL.parents[2]
+        with mock.patch.object(context.Selector, 'write'):
+            result, _ = context.Selector(root).select('rule-priority', 'PR 리뷰 양식과 PR 본문 수정 금지 규칙', max_sections=3)
+        searched = [s for s in result['sections'] if not s['mandatory']]
+        rule = [i for i, s in enumerate(searched)
+                if s['path'] == 'ai/roles/review.md' and s['heading_path'].endswith('PR 본문 보존')]
+        self.assertTrue(rule, [s['id'] for s in searched])
+        records = [i for i, s in enumerate(searched) if s['path'].startswith('docs/harness/records/')]
+        self.assertTrue(all(i > rule[0] for i in records))
+
     def test_superseded(self):
         self.put('docs/old.md', '<!-- context: superseded-by=docs/cancel.md -->\n# 예약 취소\n예전 절차\n')
         result, code = self.select()
@@ -532,7 +635,8 @@ class ContextTests(unittest.TestCase):
 
     def test_invalid_configs(self):
         for key, value in [('unknown', 1), ('version', True), ('budget_chars', True),
-                           ('allowed_paths', ['a//b']), ('extensions', ['.py']), ('mandatory', ['../x'])]:
+                           ('allowed_paths', ['a//b']), ('extensions', ['.py']), ('mandatory', ['../x']),
+                           ('history_paths', ['../x']), ('history_paths', 'docs')]:
             with self.subTest(key=key):
                 config = deepcopy(self.config)
                 config[key] = value
