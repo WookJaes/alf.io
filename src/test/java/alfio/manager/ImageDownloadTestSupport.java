@@ -18,6 +18,7 @@ package alfio.manager;
 
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.util.Promise;
+import org.eclipse.jetty.util.HostPort;
 import org.eclipse.jetty.util.SocketAddressResolver;
 
 import java.net.InetSocketAddress;
@@ -49,7 +50,7 @@ final class ImageDownloadTestSupport {
                         @Override
                         public void succeeded(List<InetSocketAddress> addresses) {
                             addresses.forEach(address -> {
-                                assertEquals(host, address.getHostString(), "preserve TLS peer hostname in pinned address");
+                                assertEquals(host, HostPort.normalizeHost(address.getHostString()), "preserve TLS peer hostname in pinned address");
                                 selectedAddress.accept(address);
                             });
                             try {

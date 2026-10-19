@@ -237,6 +237,23 @@ class FileDownloadManagerTest {
     }
 
     @Test
+    void publicIpv6LiteralUsesPinnedConnection() throws Exception {
+        try (var fixture = new ImageServer()) {
+            var publicAddress = InetAddress.getByName("2606:4700:4700::1111");
+            for (var literal : List.of("2606:4700:4700::1111", "2606:4700:4700:0:0:0:0:1111")) {
+                var downloader = ImageDownloadTestSupport.routedDownloader(host -> {
+                    assertEquals(literal, host, "DNS validation receives the unbracketed literal");
+                    return new InetAddress[] {publicAddress};
+                }, fixture.server.getAddress().getPort(), endpoint -> assertEquals(publicAddress, endpoint.getAddress()));
+                var file = downloader.downloadFile(fixture.url("[" + literal + "]", "/image.png"));
+                assertNotNull(file, "public IPv6 literal must reach the pinned transport");
+                assertArrayEquals(fixture.png, file.getFile());
+            }
+            assertEquals(2, fixture.requests.get());
+        }
+    }
+
+    @Test
     void normalImagesStillPassEventAndSubscriptionImageValidation() throws Exception {
         try (var fixture = new ImageServer()) {
             var downloader = ImageDownloadTestSupport.routedDownloader(

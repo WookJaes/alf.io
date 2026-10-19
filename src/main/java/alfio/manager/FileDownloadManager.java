@@ -24,6 +24,7 @@ import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.InputStreamResponseListener;
 import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.util.SocketAddressResolver;
+import org.eclipse.jetty.util.HostPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.Assert;
@@ -84,7 +85,7 @@ public class FileDownloadManager {
                 pinned[i] = InetAddress.getByAddress(dnsHost, pinned[i].getAddress());
             }
             SocketAddressResolver pinnedResolver = (requestedHost, port, context, promise) -> {
-                if (!dnsHost.equalsIgnoreCase(requestedHost)) {
+                if (!HostPort.normalizeHost(dnsHost).equalsIgnoreCase(requestedHost)) {
                     promise.failed(new UnknownHostException("Unexpected image host"));
                 } else {
                     promise.succeeded(Arrays.stream(pinned).map(address -> new InetSocketAddress(address, port)).toList());
