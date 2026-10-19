@@ -10,6 +10,7 @@
 | ai/roles/ | Review·QA·진단·기억 역할; 문서·구현·진행 관리는 WORKFLOW 공통 책임 |
 | ai/harness/ | [로컬 결과·게이트·무효화·재개 명령](local-validation.md), 별도 [실행 전 중개 게이트](execution-gate.md) |
 | ai/harness/context_select.py, ai/context-config.json | [작업별 문서 선택·원문 재확인](context-selection.md)과 허용 범위 설정 |
+| ai/harness/session.py, ai/local-state/session/ | [작업 기준표·체크포인트·세션 인수인계](session-handoff.md) |
 | ai/local-state/ | Git 제외 선언·최소 실행 상태·근거; CI 전송 없음 |
 | ai/templates/ | 통합 작업 기록, 실패·기억·PR 리뷰 글·대댓글 양식 |
 | ai/memory/ | 확인된 지식과 인덱스 |
