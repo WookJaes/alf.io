@@ -30,6 +30,8 @@ import org.springframework.mock.env.MockEnvironment;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.math.BigDecimal;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Map;
 
@@ -77,6 +79,33 @@ public class LocationApiControllerTest {
         String url = response.getContentType().startsWith("application/json")
             ? Json.fromJson(response.getContentAsString(), String.class) : response.getContentAsString();
         assertTrue(url.startsWith("https://maps.googleapis.com/maps/api/staticmap?center=37.5,127.0&key="));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0.0005", "-0.0009", "-0.0005", "1e-7", "-1e-7", "0.001", "5e-324", "-5e-324", "1e-999999999", "-1e-999999999"})
+    void smallCoordinatesUseBoundedPlainDecimalUrls(String coordinate) throws Exception {
+        for (var provider : new String[]{"GOOGLE", "HERE"}) {
+            when(configuration.getFor(anySet(), any())).thenReturn(settings(provider));
+            for (var accept : new String[]{"text/plain", "application/json"}) {
+                var response = mvc.perform(get(PATH).param("lat", coordinate).param("lng", coordinate).accept(accept))
+                    .andReturn().getResponse();
+                assertEquals(200, response.getStatus());
+                String url = response.getContentType().startsWith("application/json")
+                    ? Json.fromJson(response.getContentAsString(), String.class) : response.getContentAsString();
+                assertTrue(url.length() < 2000, "URL size stays bounded for extreme negative exponents");
+                String firstQuery = URI.create(url).getRawQuery().split("&")[0];
+                assertTrue(firstQuery.startsWith(provider.equals("GOOGLE") ? "center=" : "c="));
+                String coordinates = firstQuery.substring(firstQuery.indexOf('=') + 1);
+                String[] pair = coordinates.split(",");
+                assertEquals(2, pair.length);
+                for (var value : pair) {
+                    assertTrue(value.matches("-?[0-9]+[.][0-9]+"), "Expected plain decimal: " + value);
+                    assertTrue(value.length() <= 330, "Validated double output must stay bounded");
+                    assertEquals(0, new BigDecimal(value).compareTo(BigDecimal.valueOf(Double.parseDouble(coordinate))));
+                }
+                assertTrue(provider.equals("GOOGLE") ? url.endsWith(coordinates) : url.contains("&poi=" + coordinates + "&"));
+            }
+        }
     }
 
     @ParameterizedTest

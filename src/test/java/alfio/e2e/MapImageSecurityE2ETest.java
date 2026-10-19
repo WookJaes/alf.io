@@ -146,11 +146,31 @@ class MapImageSecurityE2ETest {
                             }
                         }
                     }
+                    if (!BASELINE) {
+                        for (var small : List.of("0.0005", "-0.0009", "1e-7", "1e-999999999", "5e-324")) {
+                            var response = request(driver, url(base, small, small), "application/json, text/plain, */*");
+                            assertEquals(200, response.statusCode());
+                            String smallUrl = Json.fromJson(response.body(), String.class);
+                            if (provider == GeoInfoProvider.NONE) {
+                                assertEquals("", smallUrl);
+                            } else {
+                                assertTrue(smallUrl.length() < 2000);
+                                String firstQuery = URI.create(smallUrl).getRawQuery().split("&")[0];
+                                String[] coordinates = firstQuery.substring(firstQuery.indexOf('=') + 1).split(",");
+                                assertEquals(2, coordinates.length);
+                                for (var coordinate : coordinates) {
+                                    assertTrue(coordinate.matches("-?[0-9]+[.][0-9]+"), "Plain decimal coordinate required");
+                                    assertTrue(coordinate.length() <= 330);
+                                }
+                            }
+                        }
+                        System.out.println("Map full app small coordinates: provider=" + provider + ", 5 inputs, HTTP200, plain decimal/bounded URL verified");
+                    }
                     // Run the existing Angular LocationService and compile its actual map image template.
                     Object binding = driver.executeAsyncScript("""
                         var done=arguments[arguments.length-1];
                         var i=angular.element(document.body).injector();
-                        i.get('LocationService').getMapUrl('37.5','127.0').then(function(url) {
+                        i.get('LocationService').getMapUrl('51.4779','-0.0005').then(function(url) {
                             var scope=i.get('$rootScope').$new();
                             scope.obj={location:'Synthetic map',geolocation:{mapUrl:url}};
                             scope.loadingMap=false;
@@ -172,9 +192,12 @@ class MapImageSecurityE2ETest {
                         assertEquals("", mapUrl);
                     } else {
                         assertTrue(mapUrl.contains(provider == GeoInfoProvider.GOOGLE ? "maps.googleapis.com" : "hereapi.com"));
+                        if (!BASELINE) {
+                            assertTrue(mapUrl.contains(provider == GeoInfoProvider.GOOGLE ? "center=51.4779,-0.00050&" : "c=51.4779,-0.00050&"));
+                        }
                         assertEquals(mapUrl, bound.get("src"));
                     }
-                    System.out.println("Map full app legacy Angular service/template: provider=" + provider + ", string=true, URL binding verified; external map network blocked");
+                    System.out.println("Map full app legacy Angular service/template: provider=" + provider + ", string=true, small decimal URL binding verified; external map network blocked");
                     var navigation = request(driver, url(base, PAYLOAD, "1"), BROWSER_ACCEPT);
                     driver.get(url(base, PAYLOAD, "1"));
                     boolean executed = "XSS_LOCAL_MARKER".equals(driver.getTitle());

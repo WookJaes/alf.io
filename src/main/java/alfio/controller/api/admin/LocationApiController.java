@@ -134,7 +134,8 @@ public class LocationApiController {
             if (!Double.isFinite(value) || new BigDecimal(coordinate).abs().compareTo(BigDecimal.valueOf(limit)) > 0) {
                 return null;
             }
-            return Double.toString(value);
+            // Convert only the validated double: plain decimals without unbounded input exponent expansion.
+            return BigDecimal.valueOf(value).toPlainString();
         } catch (NumberFormatException e) {
             return null;
         }
