@@ -97,6 +97,42 @@ class ContextTests(unittest.TestCase):
         self.assertTrue(all('이력 문서(후순위)' in s['reason'] for s in history))
         self.assertTrue(all('이력 문서' not in s['reason'] for s in result['sections'] if s not in history))
 
+    def test_history_waits_for_followup_rule_documents(self):
+        # 2차 탐색에서만 찾는 원 규칙을 1차 탐색의 이력 문서가 밀어내지 않는다.
+        filler = ''.join('line %d filler text here\n' % i for i in range(40))
+        self.put('docs/alpha.md', '# alpha\nalpha alpha rule\n')
+        self.put('docs/beta.md', '# guide\n' + filler + 'beta once\n')
+        self.put('docs/harness/records/2026-01-01-alpha.md', '# record\n' + filler + 'alpha once\n')
+        for option in ({'max_sections': 2}, {'budget': 2000}):
+            with self.subTest(option=option):
+                result, code = self.select('alpha beta', **option)
+                self.assertEqual((result['status'], code), ('ready', 0))
+                self.assertEqual([s['path'] for s in result['sections'] if not s['mandatory']],
+                                 ['docs/alpha.md', 'docs/beta.md'])
+                self.assertEqual(result['followup_rounds'], 1)
+
+    def test_history_coverage_skips_needless_followup(self):
+        # 들어갈 1차 이력 문서가 남은 질의어를 덮으면 2차 탐색으로 이력 후보를 늘리지 않는다.
+        self.put('AGENTS.md', '# required\n' + 'neutral ' * 240 + '\n')
+        self.put('docs/alpha.md', '# alpha\nalpha alpha rule\n')
+        self.put('docs/harness/records/alpha.md', '# alpha\nalpha beta once\n')
+        self.put('docs/harness/records/other.md', '# guide\nline 0 filler text here\nbeta once\n')
+        result, code = self.select('alpha beta', budget=2000)
+        self.assertEqual((result['status'], code), ('ready', 0))
+        self.assertEqual([s['path'] for s in result['sections'] if not s['mandatory']],
+                         ['docs/alpha.md', 'docs/harness/records/alpha.md'])
+        self.assertEqual((result['followup_rounds'], result['skipped_total']), (0, 0))
+
+    def test_followup_history_for_remaining_terms(self):
+        filler = ''.join('line %d filler text here\n' % i for i in range(40))
+        self.put('docs/alpha.md', '# alpha\nalpha alpha rule\n')
+        self.put('docs/harness/records/beta.md', '# guide\n' + filler + 'beta once\n')
+        result, code = self.select('alpha beta')
+        self.assertEqual((result['status'], code), ('ready', 0))
+        self.assertEqual([s['path'] for s in result['sections'] if not s['mandatory']],
+                         ['docs/alpha.md', 'docs/harness/records/beta.md'])
+        self.assertEqual(result['followup_rounds'], 1)
+
     def test_history_paths_explicit_scope(self):
         self.put_history()
         result, _ = self.select('예약 취소 절차', paths=['docs/harness/records'], max_sections=1)

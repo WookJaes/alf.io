@@ -536,16 +536,19 @@ class Selector:
         history = {p for p in search_entries if self.allowed(p, self.config['history_paths'])}
 
         def rank(wanted):
-            # 작업 기록 같은 이력 문서는 원 규칙·안내 후보 뒤에 둔다. 점수 기준은 묶음별로 적용한다.
+            # 작업 기록 같은 이력 문서는 원 규칙·안내 후보 뒤에 둔다.
             groups = ([], [])
             for item in search_sections:
                 value, matches, title_match = score(item, wanted)
                 if matches:
                     groups[item['path'] in history].append((value, item, matches, title_match))
+            overall = max((r[0] for group in groups for r in group), default=0)
             ranked = []
-            for group in groups:
+            for past, group in enumerate(groups):
                 group.sort(key=lambda r: (-r[0], r[1]['path'], r[1]['start_line']))
-                ranked += [r for r in group if r[0] >= group[0][0] * 0.25] if group else []
+                if group:
+                    # 원 문서는 묶음 최고점, 이력 문서는 전체 최고점 기준이라 이력 후보는 늘지 않는다.
+                    ranked += [r for r in group if r[0] >= (overall if past else group[0][0]) * 0.25]
             return ranked
 
         selected, used = {}, 0
@@ -568,35 +571,51 @@ class Selector:
         ranked = rank(query_tokens)
         candidates = {r[1]['id']: r for r in ranked}
 
-        def include(rows):
+        def include(rows, dry=False):
+            """예산·구간 수 안의 후보를 선택한다. dry는 상태를 바꾸지 않고 들어갈 구간만 돌려준다."""
+            size, count, fitted = used, sum(not s['mandatory'] for s in selected.values()), {}
             for value, item, matches, title_match in rows:
-                if item['id'] in selected:
+                if item['id'] in selected or item['id'] in fitted:
                     continue
-                if used + item['chars'] > budget:
-                    if not any(x['id'] == item['id'] for x in skipped):
+                reason = ('budget_exceeded' if size + item['chars'] > budget
+                          else 'max_sections' if count >= max_sections else None)
+                if reason:
+                    if not dry and not any(x['id'] == item['id'] for x in skipped):
                         skipped.append({'id': item['id'], 'path': item['path'], 'score': round(value, 6),
-                                        'needed_chars': item['chars'], 'reason': 'budget_exceeded'})
+                                        'needed_chars': item['chars'], 'reason': reason})
                     continue
-                if sum(not s['mandatory'] for s in selected.values()) >= max_sections:
-                    if not any(x['id'] == item['id'] for x in skipped):
-                        skipped.append({'id': item['id'], 'path': item['path'], 'score': round(value, 6),
-                                        'needed_chars': item['chars'], 'reason': 'max_sections'})
-                    continue
-                add(item, value, '일치 용어: %s; 제목 일치: %s%s' % (', '.join(matches), '예' if title_match else '아니오',
-                                                                  '; 이력 문서(후순위)' if item['path'] in history else ''))
-        include(ranked)
+                fitted[item['id']] = item
+                size, count = size + item['chars'], count + 1
+                if not dry:
+                    add(item, value, '일치 용어: %s; 제목 일치: %s%s' % (', '.join(matches), '예' if title_match else '아니오',
+                                                                      '; 이력 문서(후순위)' if item['path'] in history else ''))
+            return list(fitted.values())
 
-        def uncovered():
-            body = '\n'.join(s['text'].lower() for s in selected.values())
+        def tier(rows, past=False):
+            return [r for r in rows if (r[1]['path'] in history) == past]
+
+        def uncovered(extra=()):
+            body = '\n'.join(s['text'].lower() for s in list(selected.values()) + list(extra))
             return [word for word in query_terms if not covered(word, body)]
 
-        missing = uncovered()
-        rounds = 0
+        # 이력 문서는 원 문서의 1·2차 탐색이 끝난 뒤 남은 자리만 채운다.
+        include(tier(ranked))
+        # 2차 탐색은 들어갈 수 있는 1차 이력 문서로도 덮이지 않는 질의어에만 실행한다.
+        missing = uncovered(include(tier(ranked, True), dry=True))
+        rounds, second = 0, []
         if missing:
             rounds = 1
             second = rank(set(tokens(' '.join(missing))))
-            candidates.update((r[1]['id'], r) for r in second)
-            include(second)
+            candidates.update((r[1]['id'], r) for r in tier(second))
+            include(tier(second))
+        include(tier(ranked, True))
+        missing = uncovered()
+        if rounds and missing:
+            # 2차 이력 후보는 그 뒤에도 남은 질의어와 일치하는 것만 후보로 둔다.
+            wanted = set(tokens(' '.join(missing)))
+            late = [r for r in tier(second, True) if wanted & set(r[2])]
+            candidates.update((r[1]['id'], r) for r in late)
+            include(late)
             missing = uncovered()
         budget_skipped = [s for s in skipped if s['reason'] == 'budget_exceeded']
         if budget_skipped:
