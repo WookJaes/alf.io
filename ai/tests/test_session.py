@@ -217,6 +217,49 @@ class SessionTests(unittest.TestCase):
         self.put('AGENTS.md', '# 변경\n')
         self.assertIn('doc_changed', self.codes())
 
+    def test_guideline_updated_from_reread_document(self):
+        old = self.state.add('guideline', '지침', {'type': 'doc', 'path': 'AGENTS.md'})['items'][-1]
+        self.checkpoint()
+        self.put('AGENTS.md', '# 변경된 지침\n')
+        self.assertIn('doc_changed', self.codes())
+        result = self.cli('supersede', 'issue-44', '--replaces', old['id'], '--kind', 'guideline',
+                          '--text', '변경된 지침', '--doc', 'AGENTS.md')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        items = {i['id']: i for i in self.state.load()['items']}
+        self.assertEqual(items[old['id']]['status'], 'superseded')
+        # 이전 문서 근거와 대체 이력은 그대로 남는다.
+        self.assertEqual(items[old['id']]['source']['sha256'], old['source']['sha256'])
+        self.assertEqual(items['R2']['supersedes'], [old['id']])
+        self.checkpoint()
+        result, status = self.check()
+        self.assertEqual((result['verdict'], status, result['reasons']), ('continue', 0, []))
+
+    def test_document_cannot_replace_user_requirement(self):
+        goal = self.add('goal', '사용자 목표')
+        guide = self.state.add('guideline', '지침', {'type': 'doc', 'path': 'AGENTS.md'})['items'][-1]['id']
+        for replaces in ([goal], [goal, guide]):
+            with self.subTest(replaces=replaces), self.assertRaises(session.Invalid):
+                self.state.add('guideline', '대체', {'type': 'doc', 'path': 'AGENTS.md'}, replaces=replaces)
+        self.state.conflict([goal, guide], '적용 범위 확인')
+        with self.assertRaises(session.Invalid):
+            self.state.add('guideline', '대체', {'type': 'doc', 'path': 'AGENTS.md'}, replaces=[guide])
+        # 저장 파일을 고쳐 doc 출처가 사용자 요구를 대체하게 만들어도 기준표 손상으로 본다.
+        guide2 = self.state.add('guideline', '다른 지침', {'type': 'doc', 'path': 'AGENTS.md'})['items'][-1]['id']
+
+        def forge(value):
+            items = {i['id']: i for i in value['items']}
+            items[guide2]['supersedes'] = [goal]
+            items[goal].update(status='superseded', superseded_by=guide2)
+        self.edit(self.state.path('charter.json'), forge)
+        self.assertIn('charter_corrupt', self.codes())
+
+    @unittest.skipIf(os.name == 'nt', 'Windows는 chmod로 실행 비트를 바꾸지 않는다')
+    def test_code_changed_mode_of_modified_file(self):
+        self.put('app.txt', '수정\n')
+        self.checkpoint()
+        os.chmod(self.root / 'app.txt', 0o755)
+        self.assertIn('code_changed', self.codes())
+
     def test_doc_missing(self):
         self.state.add('guideline', '지침', {'type': 'doc', 'path': 'AGENTS.md'})
         self.checkpoint()
@@ -444,6 +487,46 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(status, 2)
         self.assertEqual(result['blocked_actions'], ['E1: push'])
         self.assertIn('external_unconfirmed', self.codes())
+
+    def test_external_actions_carried_over(self):
+        for status in ('unknown', 'done'):
+            with self.subTest(status=status):
+                self.setUp()
+                self.checkpoint(external_actions=self.external(status))
+                # 다음 체크포인트에서 빠뜨리면 보류·재실행 금지 정보가 사라지므로 저장을 거부한다.
+                with self.assertRaises(session.Invalid):
+                    self.checkpoint()
+                self.assertEqual(len(self.state.checkpoints()), 1)
+                self.assertIn('external_unconfirmed' if status == 'unknown' else 'external_done', self.codes())
+        with self.assertRaises(session.Invalid):
+            self.checkpoint(external_actions=self.external('pending'))
+        with self.assertRaises(session.Invalid):
+            self.checkpoint(external_actions=[dict(self.external('done')[0], kind='comment')])
+
+    def test_unconfirmed_external_done_needs_evidence(self):
+        self.checkpoint(external_actions=self.external('unknown'))
+        with self.assertRaises(session.Invalid):
+            self.checkpoint(external_actions=self.external('done'))
+        self.checkpoint(external_actions=self.external('pending'))
+        # 확인 내용이 빈 근거나 다른 ID의 근거로는 done으로 바꿀 수 없다.
+        for ref in ('E1:', 'E1:   ', 'E10: 확인', 'E: 확인'):
+            with self.subTest(ref=ref), self.assertRaises(session.Invalid):
+                self.checkpoint(external_actions=self.external('done'), facts=[
+                    {'text': '확인', 'evidence': {'type': 'external', 'ref': ref}}])
+        fact = {'text': '원격 브랜치에 커밋이 있음', 'evidence': {'type': 'external', 'ref': 'E1: git log origin/main'}}
+        self.checkpoint(external_actions=self.external('done'), facts=[fact])
+        result, status = self.check()
+        self.assertEqual((status, result['blocked_actions']), (0, []))
+        self.assertIn('external_done', self.codes())
+
+    def test_external_action_id_format(self):
+        for ident in ('E1:push', ' E1', 'E1 ', '', 'E 1'):
+            with self.subTest(ident=ident), self.assertRaises(session.Invalid):
+                self.checkpoint(external_actions=[dict(self.external('unknown')[0], id=ident)])
+        self.checkpoint(external_actions=[dict(self.external('unknown')[0], id='pr-52.comment_1')])
+        fact = {'text': '댓글 확인', 'evidence': {'type': 'external', 'ref': 'pr-52.comment_1: gh pr view 52'}}
+        self.checkpoint(external_actions=[dict(self.external('done')[0], id='pr-52.comment_1')], facts=[fact])
+        self.assertEqual(self.check()[1], 0)
 
     def test_task_id_rejected(self):
         for ident in ('A', 'a.', '../x', '', 'x' * 65, '/root', 'x/y', 'x\\y'):

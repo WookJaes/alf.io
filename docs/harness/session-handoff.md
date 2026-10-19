@@ -31,7 +31,7 @@ python -B ai/harness/session.py handoff issue-44
 python -B ai/harness/session.py show issue-44
 ```
 
-selection과 section은 실제 저장 선택에 있어야 한다. guideline은 문서 출처만, goal/scope/forbidden/done/approval은 사용자 원문 인용만 받는다. user 인용·항목 text는 1~300자, origin은 1~200자다. 문서 경로는 저장소 상대 POSIX 경로이며 .git·ai/local-state·ai/local-evidence는 지침 출처로 사용할 수 없다. 문서 출처는 전체 파일 해시 또는 저장 선택의 구간 ID를 남긴다. supersede는 새 사용자 항목을 추가하고 이전 active 항목을 영구히 대체한다. 대체된 조건을 다시 쓰려면 새 사용자 항목으로 추가한다. 열린 충돌 중 하나라도 대체하면 새 항목을 근거로 충돌을 해소한다.
+selection과 section은 실제 저장 선택에 있어야 한다. guideline은 문서 출처만, goal/scope/forbidden/done/approval은 사용자 원문 인용만 받는다. user 인용·항목 text는 1~300자, origin은 1~200자다. 문서 경로는 저장소 상대 POSIX 경로이며 .git·ai/local-state·ai/local-evidence는 지침 출처로 사용할 수 없다. 문서 출처는 전체 파일 해시 또는 저장 선택의 구간 ID를 남긴다. supersede는 새 항목을 추가하고 이전 active 항목을 영구히 대체한다. 요구·범위·금지·완료·승인은 user 원문으로만 대체한다. 지침 문서가 바뀌어 doc_changed가 나오면 원문을 다시 확인한 뒤 `supersede --replaces <지침 ID> --kind guideline --doc <경로>`(또는 `--selection`·`--section`)로 guideline만 문서 근거로 갱신한다. 이전 지침 항목과 문서 해시는 superseded 이력으로 남는다. 대체된 조건을 다시 쓰려면 새 항목으로 추가한다. 열린 충돌은 user 원문 대체로만 해소하며, 충돌에 걸린 지침은 문서 근거로 대체할 수 없다.
 
 approval 항목은 `--kind approval --action git.commit [--target 브랜치] [--expires 2026-10-20T00:00:00Z]`와 사용자 인용을 함께 준다. 승인 유효기간은 시간대를 포함한 ISO8601이다. 이 인용 기록만으로 실행 게이트 승인을 얻는 것은 아니다.
 
@@ -53,11 +53,11 @@ approval 항목은 `--kind approval --action git.commit [--target 브랜치] [--
 }
 ```
 
-모든 active goal/scope/forbidden/done을 covers에 넣는다. forbidden은 kept/violated만, 다른 항목은 done/in_progress/pending/blocked만 허용한다. superseded·없는 ID는 저장을 거부한다. phase는 plan/implement/verify/review/handoff/other, facts의 근거 유형은 run/selection/file/commit/external/note다. runs·selections에는 실제 저장 ID만 넣는다. external_actions는 id·kind(commit/push/pr/comment/issue/other)·status(done/pending/unknown)·ref를 기록한다. 실행에 사용한 승인 항목 ID는 approvals_used에 둔다.
+모든 active goal/scope/forbidden/done을 covers에 넣는다. forbidden은 kept/violated만, 다른 항목은 done/in_progress/pending/blocked만 허용한다. superseded·없는 ID는 저장을 거부한다. phase는 plan/implement/verify/review/handoff/other, facts의 근거 유형은 run/selection/file/commit/external/note다. runs·selections에는 실제 저장 ID만 넣는다. external_actions는 id·kind(commit/push/pr/comment/issue/other)·status(done/pending/unknown)·ref를 기록한다. 직전 체크포인트의 외부 작업은 다음 체크포인트에도 같은 id·kind로 모두 넣어야 하며, 빠뜨리면 저장을 거부한다. done은 되돌릴 수 없다. pending/unknown을 done으로 바꾸려면 facts에 `{"type": "external", "ref": "E1: 확인 방법·결과"}`처럼 `ID:` 뒤에 비어 있지 않은 확인 내용을 함께 넣는다. 외부 작업 ID는 영문·숫자·점·밑줄·하이픈 1~64자이며 콜론·공백을 쓰지 않는다. 도구는 근거의 형식만 검사하며 확인 내용이 사실인지는 기록자 책임이다. 실행에 사용한 승인 항목 ID는 approvals_used에 둔다.
 
 파일은 Git 제외 `ai/local-state/session/<task>/`에만 저장한다. task는 소문자·숫자로 시작하는 1~64자의 소문자·숫자·점·밑줄·하이픈이며 끝 점과 Windows 예약명을 거부한다. 상태 경로·상위 경로의 링크·정션도 거부한다. Git 제외가 풀렸거나 ai/local-state가 추적되면 쓰기를 거부한다.
 
-charter.json은 변경마다 revision과 canonical JSON SHA-256을 갱신한다. checkpoint-0001.json부터 순서대로 추가하며 기존 파일은 덮어쓰지 않는다. 체크포인트에는 당시 기준표 해시·HEAD·브랜치·미커밋 작업 트리 해시와 직전 체크포인트 해시를 넣는다. 작업 트리에는 ignored를 제외한 변경 파일·삭제·untracked와 docs/harness/records도 포함한다. 모든 쓰기는 같은 디렉터리의 `.<name>.<uuid>.tmp` 후 os.replace이며, 중단 흔적은 자동 삭제하지 않는다. handoff.md와 resume-prompt.txt만 다시 생성할 때 덮어쓴다. 원문 대화 전체·원본 로그·비밀값을 저장하지 않는다.
+charter.json은 변경마다 revision과 canonical JSON SHA-256을 갱신한다. checkpoint-0001.json부터 순서대로 추가하며 기존 파일은 덮어쓰지 않는다. 체크포인트에는 당시 기준표 해시·HEAD·브랜치·미커밋 작업 트리 해시와 직전 체크포인트 해시를 넣는다. 작업 트리에는 ignored를 제외한 변경 파일·삭제·untracked와 docs/harness/records도 포함하며, run.py처럼 파일별 실행 가능 여부도 함께 해시한다. 모든 쓰기는 같은 디렉터리의 `.<name>.<uuid>.tmp` 후 os.replace이며, 중단 흔적은 자동 삭제하지 않는다. handoff.md와 resume-prompt.txt만 다시 생성할 때 덮어쓴다. 원문 대화 전체·원본 로그·비밀값을 저장하지 않는다.
 
 ## 경계와 판정
 

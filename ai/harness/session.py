@@ -170,7 +170,8 @@ def code(root):
                           for p in sorted(path.rglob('*')) if p.is_file() or p.is_symlink()])
         else:
             sha = 'deleted'
-        files.append([name, sha])
+        # run.py 코드 식별과 같이 내용이 같아도 실행 가능 여부 변경을 구분한다.
+        files.append([name, sha, bool(path.exists() and path.stat().st_mode & 0o111)])
     return {'head': git(root, 'rev-parse', 'HEAD').decode().strip(),
             'branch': git(root, 'rev-parse', '--abbrev-ref', 'HEAD').decode().strip(),
             'worktree': digest(files)}
@@ -302,6 +303,8 @@ class Session:
             for item in value['items']:
                 if any(i not in ids for i in item['supersedes']):
                     raise Invalid('대체 대상 ID 누락')
+                if item['source']['type'] != 'user' and any(by_id[i]['kind'] != 'guideline' for i in item['supersedes']):
+                    raise Invalid('doc 출처가 지침 외 항목을 대체함')
                 if item['status'] == 'superseded':
                     replacement = by_id.get(item['superseded_by'])
                     if replacement is None or item['id'] not in replacement['supersedes']:
@@ -353,11 +356,15 @@ class Session:
             raise Invalid('항목 kind 오류')
         source = self.source(kind, source)
         text(body)
-        if replaces and source['type'] != 'user':
-            raise Invalid('대체는 user 원문으로만 가능합니다')
         active = {i['id']: i for i in charter['items'] if i['status'] == 'active'}
         if any(i not in active for i in replaces) or len(set(replaces)) != len(replaces):
             raise Invalid('대체 대상은 중복 없는 active 항목 ID 필요')
+        if replaces and source['type'] != 'user':
+            # 지침만 다시 확인한 문서 근거로 갱신한다. 요구·금지·완료·승인은 user 원문으로만 대체한다.
+            if kind != 'guideline' or any(active[i]['kind'] != 'guideline' for i in replaces):
+                raise Invalid('doc 출처는 guideline 항목만 대체할 수 있고 나머지 대체는 user 원문으로만 가능합니다')
+            if any(c['status'] == 'open' and set(c['items']) & set(replaces) for c in charter['conflicts']):
+                raise Invalid('열린 충돌 항목은 user 원문으로만 해소할 수 있습니다')
         if kind == 'approval':
             self.approval(approval)
         elif approval is not None:
@@ -433,7 +440,8 @@ class Session:
                     or action['kind'] not in {'commit', 'push', 'pr', 'comment', 'issue', 'other'}
                     or action['status'] not in {'done', 'pending', 'unknown'} or action['id'] in ids):
                 raise Invalid('외부 작업 형식·중복 ID 오류')
-            text(action['id'], 200)
+            if not isinstance(action['id'], str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}', action['id']):
+                raise Invalid('외부 작업 ID는 영문·숫자·점·밑줄·하이픈 1~64자(콜론·공백 금지)')
             text(action['ref'], 200)
             ids.add(action['id'])
         assessment = value['self_assessment']
@@ -486,6 +494,8 @@ class Session:
         previous, errors = self.chain()
         if errors:
             raise Invalid('체크포인트 체인 손상: 신뢰할 사본을 복구하거나 새 작업 ID 사용')
+        if previous:
+            self.carry_external(previous, value)
         for ident in value['runs']:
             run.Run(self.root, ident).load()
         for ident in value['selections']:
@@ -500,6 +510,25 @@ class Session:
             raise Invalid('기존 체크포인트 덮어쓰기 금지')
         self.write(name, result)
         return result
+
+    def carry_external(self, previous, value):
+        """이전 외부 작업은 빠뜨릴 수 없고, 미확인 → done은 실제 확인 근거가 있을 때만 허용한다."""
+        current = {a['id']: a for a in value['external_actions']}
+        # 외부 작업 ID에는 콜론·공백이 없으므로 "ID: 확인 내용"의 ID와 비어 있지 않은 내용을 정확히 나눈다.
+        confirmed = set()
+        for fact in value['facts']:
+            ident, _, detail = fact['evidence']['ref'].partition(':')
+            if fact['evidence']['type'] == 'external' and detail.strip():
+                confirmed.add(ident)
+        for old in previous['external_actions']:
+            new = current.get(old['id'])
+            if new is None or new['kind'] != old['kind']:
+                raise Invalid('이전 외부 작업 %s 누락·종류 변경: 이전 상태를 승계하거나 실제 확인 결과로 갱신' % old['id'])
+            if old['status'] == 'done' and new['status'] != 'done':
+                raise Invalid('완료된 외부 작업 %s를 미완료로 되돌릴 수 없습니다' % old['id'])
+            if old['status'] != 'done' and new['status'] == 'done' and old['id'] not in confirmed:
+                raise Invalid('미확인 외부 작업 %s를 done으로 바꾸려면 facts에 external 근거 "%s: 확인 방법·결과" 필요'
+                              % (old['id'], old['id']))
 
     def check(self, boundary, handoff=None):
         if boundary not in {'plan', 'execute', 'phase-end', 'resume'}:
@@ -749,10 +778,9 @@ def main(argv=None):
             command.add_argument('--text', required=True)
             source = command.add_mutually_exclusive_group(required=True)
             source.add_argument('--quote')
-            if name == 'add':
-                source.add_argument('--doc')
-                source.add_argument('--selection')
-                command.add_argument('--section')
+            source.add_argument('--doc')
+            source.add_argument('--selection')
+            command.add_argument('--section')
             command.add_argument('--origin')
             for option in ('action', 'target', 'expires'):
                 command.add_argument('--' + option)

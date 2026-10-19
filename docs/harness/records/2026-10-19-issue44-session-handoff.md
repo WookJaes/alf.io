@@ -47,6 +47,7 @@ Codex CLI·데스크톱에서 압축 직전 훅이 보장되지 않는다는 #33
 - `python -B -X utf8=0 ai/tests/check.py`: 종료 0, 통과
 - `python -B -X utf8=0 -m unittest discover -s ai/tests -p 'test_*.py'`: 종료 0, Ran 284, OK(skipped=46), 266초
 - test_session.py 단독: 72건 OK(185초).
+- PR #52 리뷰 반영 후 같은 네 명령 재실행: check.py 두 모드 통과. unittest는 두 모드 모두 Ran 290(신규 78), OK(skipped=47). 추가된 skip 1건은 Windows의 실행 비트 테스트다.
 
 ## 실제 재개 비교(1회)
 
@@ -81,6 +82,12 @@ Codex CLI·데스크톱에서 압축 직전 훅이 보장되지 않는다는 #33
 - 리뷰 방식·확인 범위·발견 사항: Claude가 session.py 전체와 문서·테스트 diff를 리뷰했다.
   1. (반영) `check --handoff`가 active 절의 ID 줄과 인용만 확인했다. 그래서 ID 없는 오래된 요구 줄 추가, 남은 일 변경, 외부 작업 done→pending 변경을 놓쳤다. 재현 스크립트로 수정 전 3건 미감지·수정 후 4건 모두 감지를 확인했다. 기준표·체크포인트로 결정되는 본문(active~외부 작업) 전체를 다시 만들어 비교하도록 바꿨다. 회귀 테스트 `test_handoff_stale_text_outside_item_ids`를 추가했다.
   2. (반영) 사용 문서에 특정 사용자 PC의 절대 경로가 들어 있어 일반 안내로 바꿨다.
+- PR #52 리뷰(7adad0b 기준, 차단 2·검토 1) 반영:
+  1. (차단) 다음 체크포인트에서 외부 작업이 빠지면 unknown의 보류와 done의 재실행 금지가 사라졌다. 이제 직전 외부 작업은 같은 id·kind로 모두 승계해야 하고, done은 되돌릴 수 없다. pending/unknown→done은 facts에 `E1: …` 형태의 external 근거가 있어야 한다.
+  2. (차단) 바뀐 지침 문서로 guideline을 갱신할 수 없었다. 이제 guideline에 한해 doc 출처로 supersede할 수 있다(CLI `supersede --doc/--selection`). 요구·금지·완료·승인은 계속 user 원문으로만 대체한다. 충돌에 걸린 지침은 doc으로 대체할 수 없고, doc 출처가 지침 외 항목을 대체한 기준표는 손상으로 판정한다.
+  3. (검토) 이미 수정된 파일의 실행 비트 변경을 놓쳤다. 이제 run.py처럼 파일별 실행 가능 여부를 작업 트리 해시에 넣는다.
+  - Codex adversarial-review(작업 트리, 읽기 전용, 메모리 재현)가 수정본에서 medium 2건을 지적했다. 둘 다 재현해 반영했다. 첫째, `E1:`처럼 빈 근거로도 done 전환이 됐다. 이제 콜론 뒤 내용이 있어야 한다. 둘째, 콜론이나 앞뒤 공백이 있는 ID(`E1:push`, ` E1`)는 근거와 매칭되지 않아 완료할 수 없었다. 이제 외부 작업 ID를 `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`로 제한한다. 지침 대체와 파일 모드 해시에서는 추가 결함이 없었다. 사전에 정한 종료 기준에 따라 재리뷰는 하지 않았다.
+  - 1·2의 회귀 테스트 4건은 수정 전 session.py(7adad0b)에서 실패 6건(하위 케이스 포함)이었고, 수정 후 통과했다. 3의 테스트는 Windows에서 chmod가 실행 비트를 바꾸지 않아 skip했으므로 Ubuntu CI 결과로 확인한다.
 - 관련 기억·적용/제외 이유: Codex 환경의 `python` 별칭 문제(이전 세션 진단)를 반영해 절대 경로를 썼다.
 - 생략 검증·이유·남은 위험:
   - Linux·macOS(CI)에서 실행하지 않았다.
