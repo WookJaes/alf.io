@@ -9,6 +9,7 @@
 | ai/WORKFLOW.md, routing.md | 현재 Codex의 작업 절차와 역할 선택 |
 | ai/roles/ | Review·QA·진단·기억 역할; 문서·구현·진행 관리는 WORKFLOW 공통 책임 |
 | ai/harness/ | [로컬 결과·게이트·무효화·재개 명령](local-validation.md), 별도 [실행 전 중개 게이트](execution-gate.md) |
+| ai/harness/context_select.py, ai/context-config.json | [작업별 문서 선택·원문 재확인](context-selection.md)과 허용 범위 설정 |
 | ai/local-state/ | Git 제외 선언·최소 실행 상태·근거; CI 전송 없음 |
 | ai/templates/ | 통합 작업 기록, 실패·기억·PR 리뷰 글·대댓글 양식 |
 | ai/memory/ | 확인된 지식과 인덱스 |
@@ -69,5 +70,11 @@ python -B -X utf8=0 -m unittest discover -s ai/tests -p 'test_*.py' -v
 전체 회귀 테스트에는 CP949 기본 인코딩 모사와 실제 기억 양식 검증이 포함된다. `unittest`의 `Ran N tests`로 실제 실행 건수를 확인한다. 검사와 테스트를 각각 별도 단계에서 실행하므로 하나라도 종료 코드가 0이 아니면 해당 Actions 작업이 실패한다. 실제 Actions 실행 URL·환경별 결과·건수를 PR에 기록하고, 미실행·스킵은 통과로 표시하지 않는다.
 
 CLI 회귀는 부모의 출력 인코딩에 의존하지 않고 자식의 `PYTHONIOENCODING`과 읽기 인코딩을 일치시킨다. UTF-8 모드를 끈 상태에서 부모 CP949 설정 상속 및 실제 CP949 자식 출력으로 정상 완료·변경 후 무효화 안내를 확인하는 회귀도 포함한다. 이 조건 모사와 실제 Windows 실행은 구분한다.
+
+문서 선택의 100·1,000개 합성 평가는 CI에서 실행하지 않는 수동 평가다. 다음 명령으로 별도 실행한다.
+
+```sh
+python -B ai/tests/measure_context_select.py --sizes 100 1000 --emit-model-tasks
+```
 
 제품 변경은 작업에 맞는 테스트·화면 확인을 별도로 수행한다. 하네스 검사 성공은 제품 검증 성공을 의미하지 않는다. 작업 기록에서 실제 결과와 생략 범위를 구분한다.
