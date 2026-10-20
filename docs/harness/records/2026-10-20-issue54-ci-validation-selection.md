@@ -32,3 +32,12 @@
 - `issue54-selection` run: 하네스 구조 검사 종료 0, CI 회귀 실제 8건·결과 검사기 실제 6건·하네스 회귀 실제 287건 모두 실패/오류 0. 하네스 Windows 전용 3건은 macOS에서 skip(전체 발견 290), 실제 실행에 포함하지 않았다.
 - Ruby 2.6.10 YAML 파싱과 기준 커밋 객체 비교: 기존 6개 workflow에서 허용한 분류·필터 변경 외 동등함을 확인(종료 0). actionlint는 설치되어 있지 않아 실행하지 않았다.
 - 자체 QA·리뷰: 실제 diff·회귀 코드·문서와 이슈 조건 대조, 차단 사항 없음. 무시되는 근거 `ai/local-state/issue54/qa-selection.md`·`review-selection.md`에 연결. `gate issue54-selection` 통과(종료 0). staged diff와 공백 검사를 거쳐 선택 검증·입력 필터·회귀·직접 관련 문서를 함께 커밋한다.
+
+### 두 번째 커밋: 결과 검사기 Python CI
+
+- 첫 커밋: `6eb61cd5b` — 선택 검증·공통 입력 감지·실제 분류/필터 회귀·안내를 함께 포함했다.
+- `CI validation checks` 신설: main 대상 PR과 main push의 scripts/validation/*.py·scripts/ci/**·workflow 변경에서 Python 3.13만 준비한다. Java·Docker·Gradle 준비 없이 결과 검사기와 CI 회귀를 별도 단계로 실행한다. 문서 전용 제외·읽기 권한·5분 제한을 적용했다.
+- 실제 명령은 workflow에서 읽어 임시 복사본에 실행했다. 정상 결과 검사기 회귀 6건 종료 0, checker의 sys.exit를 print로 변조하면 실패가 드러나 종료 1, 추가 실패 회귀도 발견되어 종료 1을 확인했다. 실제 저장소 checker나 테스트는 변조하지 않았다.
+- 최초 Python CI 테스트 2건이 로컬의 `python` 명령 부재로 실패했다. Ubuntu workflow와 로컬 모두 사용할 수 있는 `python3`로 명시하고 재검증했다. 테스트 기대값을 완화하지 않았다.
+- `issue54-python`: 구조 검사 종료 0, CI 회귀 실제 11건·결과 회귀 실제 6건, 실패/오류/스킵 0, 모두 종료 0. 실제 CI의 두 unittest 명령과 일치한다. 기존 하네스 본체/회귀는 바뀌지 않아 앞 단계 287건을 새 실행으로 재집계하지 않았다.
+- 새 YAML 파싱·기존 6개 workflow 보존 대조 종료 0. 자체 QA·리뷰와 gate 통과(종료 0). 관련 diff·staged diff·공백 검사를 확인해 CI·직접 관련 회귀·문서를 함께 커밋한다. 로컬 Python 3.9.6 실행이며 원격 Python 3.13·Actions job 관측은 미실행이다.

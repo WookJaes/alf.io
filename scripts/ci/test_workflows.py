@@ -7,6 +7,7 @@ import ast
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -185,6 +186,61 @@ class ValidationPathsTest(unittest.TestCase):
                                                             'frontend/admin/guide.adoc', 'docs/testing/guide.md']))
         self.assertFalse(triggered('e2e-test.yml', 'pull_request', ['scripts/validation/migration.sh']))
         self.assertFalse(triggered('migration-test.yml', 'push', ['scripts/validation/e2e.sh']))
+
+
+class PythonCITest(unittest.TestCase):
+    def test_changed_python_and_workflow_inputs_trigger_ci(self):
+        for event in ('pull_request', 'push'):
+            for path in ('scripts/validation/check-results.py', 'scripts/validation/test_results.py',
+                         'scripts/ci/test_workflows.py', '.github/workflows/ci-validation-check.yml',
+                         '.github/workflows/build-on-push.yml'):
+                with self.subTest(event=event, path=path):
+                    self.assertTrue(triggered('ci-validation-check.yml', event, [path]))
+            self.assertFalse(triggered('ci-validation-check.yml', event, ['scripts/ci/README.md']))
+
+    def result_command(self):
+        source = workflow('ci-validation-check.yml')
+        self.assertNotRegex(source, r'setup-java|gradlew|docker')
+        self.assertIn('shell: bash', source)
+        commands = re.findall(r'^ +run: (.+)$', block(source, 'python'), re.M)
+        self.assertEqual(2, len(commands))
+        self.assertIn('scripts/validation', commands[0])
+        self.assertIn('scripts/ci', commands[1])
+        return commands[0]
+
+    def test_result_step_executes_tests_and_propagates_checker_failure(self):
+        command = self.result_command()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            validation = root / 'scripts/validation'
+            shutil.copytree(ROOT / 'scripts/validation', validation, ignore=shutil.ignore_patterns('__pycache__'))
+            # Run the workflow's exact command using Actions' explicit Bash contract.
+            def run():
+                return subprocess.run(['bash', '--noprofile', '--norc', '-eo', 'pipefail', '-c', command],
+                                      cwd=root, capture_output=True, text=True)
+            good = run()
+            self.assertEqual(0, good.returncode, good.stderr)
+            self.assertRegex(good.stderr, r'Ran [1-9][0-9]* tests')
+            checker = validation / 'check-results.py'
+            checker.write_text(checker.read_text(encoding='utf-8').replace('sys.exit(', 'print('), encoding='utf-8')
+            bad = run()
+            self.assertNotEqual(0, bad.returncode, bad.stderr)
+            self.assertIn('FAILED', bad.stderr)
+
+    def test_result_step_discovers_new_failing_regression(self):
+        command = self.result_command()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / 'scripts/validation'
+            target.mkdir(parents=True)
+            (target / 'test_injected.py').write_text(
+                'import unittest\nclass Failure(unittest.TestCase):\n def test_failure(self):\n  self.fail("synthetic CI failure")\n',
+                encoding='utf-8')
+            result = subprocess.run(['bash', '--noprofile', '--norc', '-eo', 'pipefail', '-c', command],
+                                    cwd=root, capture_output=True, text=True)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn('synthetic CI failure', result.stderr)
+            self.assertIn('Ran 1 test', result.stderr)
 
 
 if __name__ == '__main__':

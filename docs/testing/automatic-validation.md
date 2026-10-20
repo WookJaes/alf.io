@@ -12,7 +12,7 @@ PR 내부 변경 분류도 `.md`·`.rst`·`.adoc`를 영역 판정보다 먼저 
 
 PostgreSQL 15·16·17의 기존 `build distribution jacocoTestReport`, Java 25·Codecov 업로드·Docker 이미지 jobs는 유지한다. 기존 릴리스 배포 입력을 보존하기 위해 모든 태그 push도 유지한다. [GitHub 규칙](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onpushpull_requestpull_request_targetpathspaths-ignore)상 태그 push에는 경로 필터가 적용되지 않으므로 문서 전용 제외는 브랜치 push/PR에 대한 조건이다. 이미지 jobs의 기존 `alfio-event/alf.io` 저장소 조건은 유지돼 이 포크에서는 실행하지 않는다.
 
-원격 실행이 허용되면 제품 변경 main 대상 PR에서 빌드 3개가 실행되고 PR 브랜치 push 빌드는 생기지 않는지 확인한다. 문서 전용 PR/브랜치 push 및 main push에서는 실행하지 않아야 하며, 제품 변경의 main 반영 후에는 실행해야 한다. 태그 검증이 필요할 때는 기존 실제 릴리스 절차에서 확인하고 검증만을 위해 임의 태그·이미지 배포를 만들지 않는다. 실행 URL·이벤트·검증 커밋·결과는 후속 기록에 남긴다.
+원격 실행이 허용되면 main 대상 PR에서 단일 영역은 해당 선택 검사, 양쪽 영역·공통 설정은 PostgreSQL 15·16·17 전체 빌드 3개가 실행되고 PR 브랜치 push 빌드는 생기지 않는지 확인한다. 문서 전용 PR/브랜치 push 및 main push에서는 실행하지 않아야 하며, 제품 변경의 main 반영 후에는 실행해야 한다. 태그 검증이 필요할 때는 기존 실제 릴리스 절차에서 확인하고 검증만을 위해 임의 태그·이미지 배포를 만들지 않는다. 실행 URL·이벤트·검증 커밋·결과는 후속 기록에 남긴다.
 
 ## CodeQL CI
 
@@ -23,6 +23,17 @@ CodeQL도 관련 변경이 포함된 main 대상 `pull_request`와 main 브랜�
 마지막 `!**/*.md`, `!**/*.rst`, `!**/*.adoc`로 문서 전용 변경을 제외한다. 이는 [워크플로우 실행 필터](https://docs.github.com/en/code-security/reference/code-scanning/workflow-configuration-options)이며 CodeQL 분석 자체의 languages/paths-ignore를 변경하거나 검사 대상을 줄이지 않는다. 빌드의 Codecov 전용 설정은 CodeQL 전용 입력으로 추가하지 않는다. 태그 push는 일반 빌드/기존 배포 경로에서 처리하고 CodeQL은 main 브랜치·PR·정기 실행으로 검증한다.
 
 후속으로 제품 변경 PR과 하네스 Python/Actions 변경 PR에서 분석이 실행되는지, 후속 PR 브랜치 push가 별도 분석을 생성하지 않는지, 문서 전용 PR/main push에서 분석이 생기지 않는지 확인한다. 제품 변경 main push 및 기존 정기 실행의 분석/결과 업로드 성공도 확인한다. 빌드와 함께 경로 필터의 [GitHub diff 제한](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#git-diff-comparisons)을 따르며, 로컬 대표 경로 대조를 실제 원격 이벤트 확인으로 표시하지 않는다. 브랜치 보호·필수 검사 지정은 변경하지 않는다.
+
+## CI 검증 도구의 Python 회귀
+
+`CI validation checks`는 main 대상 PR과 main push에서 `scripts/validation/*.py`(결과 검사기·회귀), `scripts/ci/**`, `.github/workflows/**` 변경을 감지한다. 경로 내부 md/rst/adoc 문서는 제외한다. Python 3.13만 준비하고 Java·Docker·Gradle 준비 없이 아래 두 명령을 별도 단계로 실행한다. unittest 실패는 단계와 CI 실패로 전달된다.
+
+```sh
+python3 -B -m unittest discover -s scripts/validation -p 'test_*.py' -v
+python3 -B -m unittest discover -s scripts/ci -p 'test_*.py' -v
+```
+
+워크플로우 회귀는 실제 CI의 결과 검사기 명령을 임시 복사본에서 실행한다. 정상 6건 통과 외에 검사기의 실패 거부를 무력화한 경우와 새 실패 테스트를 추가한 경우를 실행해 비정상 종료 전파를 확인한다. 합성 실패는 임시 복사본 안에서만 발생하며 실제 저장소 파일을 바꾸지 않는다. Python 전용 CI가 기존 E2E·DB 검증을 대체하지는 않는다.
 
 ## 자동 E2E
 
