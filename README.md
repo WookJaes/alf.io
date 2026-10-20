@@ -38,7 +38,9 @@ Windows PowerShell에서는 `./gradlew` 대신 `.\gradlew.bat`를 사용합니�
 
 `bootRun`은 기본 로컬 PostgreSQL `localhost:5432`, DB `alfio`, 사용자 `postgres`, 비밀번호 `password`를 사용합니다. 개발용 DB를 별도로 준비하고 실제 데이터·비밀값을 사용하지 마세요. 앱이 테이블을 준비한 후 `http://localhost:8080/admin`에서 사용자 `admin`과 콘솔에 출력된 비밀번호로 로그인합니다.
 
-`./gradlew -Pprofile=dev bootRun`처럼 프로필을 지정합니다. `dev`는 개발, `spring-boot`는 Spring Boot 실행, `demo`는 임시 관리자 생성, `disable-jobs`는 작업 비활성화, `jdbc-session`은 DB 세션 저장에 사용합니다. `demo`는 행사 게시를 금지합니다.
+`./gradlew -Pprofile=dev bootRun`처럼 프로필을 지정합니다. `dev`는 개발, `spring-boot`는 Spring Boot 실행, `demo`는 임시 관리자 생성, `disable-jobs`는 작업 비활성화에 사용합니다. `demo`는 행사 게시를 금지합니다.
+
+HTTP 세션은 프로필 지정 여부와 관계없이 DB의 `ALFIO_SPRING_SESSION` 테이블에 저장됩니다. 세션 저장을 위해 `jdbc-session` 프로필을 지정할 필요는 없습니다.
 
 추가 JVM 속성은 Git에서 제외되는 `custom.jvmargs`에 한 줄씩 작성합니다. 디버깅에는 `-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005`를 사용할 수 있습니다. 전체 task는 `./gradlew tasks --all`, 의존성 업데이트 조회는 `./gradlew dependencyUpdates`로 확인합니다.
 
