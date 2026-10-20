@@ -1,5 +1,7 @@
 # Alf.io website
 
+이 디렉터리는 원본에서 이어받은 웹사이트 소스입니다. 이 포크는 사이트를 배포하지 않으며 아래 도구 설명은 로컬 문서 확인용입니다. 기여·문의는 [WookJaes/alf.io](https://github.com/WookJaes/alf.io)의 README와 이슈를 참고하세요. 원본 문서의 과거 배포 예시는 현재 포크의 배포·지원 약속이 아닙니다.
+
 This website uses 
 
 - [Hugo](https://gohugo.io) for generating the html
@@ -16,7 +18,7 @@ Since Docsy is included as a submodule, you have to make sure to clone also subm
 The `hugo server` command builds and serves the site. If you just want to build the site, run `hugo` instead.
 
 ```bash
-git clone --recurse-submodules --depth 1 https://github.com/alfio-event/alf.io.git
+git clone --recurse-submodules --depth 1 https://github.com/WookJaes/alf.io.git
 cd alf.io/website
 hugo server
 ```
