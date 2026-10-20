@@ -81,6 +81,9 @@ jobs:
                   common=false
                   while IFS= read -r path; do
                     case "$path" in
+                      *.md|*.rst|*.adoc)
+                        continue
+                        ;;
                       frontend/*)
                         frontend=true
                         ;;
