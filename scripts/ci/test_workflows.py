@@ -188,6 +188,55 @@ class ValidationPathsTest(unittest.TestCase):
         self.assertFalse(triggered('migration-test.yml', 'push', ['scripts/validation/e2e.sh']))
 
 
+class ConcurrencyTest(unittest.TestCase):
+    names = ('build-on-push.yml', 'codeql-analysis.yml', 'harness-check.yml',
+             'e2e-test.yml', 'migration-test.yml', 'browser-regression.yml')
+
+    def policy(self, name, event, number, run_id):
+        source = workflow(name)
+        context = {'github.workflow': re.search(r'^name: (.+)$', source, re.M)[1].strip('"'),
+                   'github.event_name': event, 'github.event.pull_request.number': number,
+                   'github.run_id': run_id}
+        configuration = block(source, 'concurrency')
+        group = re.search(r'^ +group: (.+)$', configuration, re.M)[1]
+        cancel = re.search(r'^ +cancel-in-progress: \$\{\{(.*?)\}\}', configuration, re.M)[1]
+        return interpolate(group, context), expression(cancel, context)
+
+    def test_same_pr_successor_shares_group_and_cancels(self):
+        for name in self.names:
+            with self.subTest(workflow=name):
+                first = self.policy(name, 'pull_request', 54, 100)
+                second = self.policy(name, 'pull_request', 54, 101)
+                self.assertEqual(first, second)
+                self.assertTrue(second[1])
+
+    def test_different_prs_and_workflows_do_not_share_groups(self):
+        groups = []
+        for name in self.names:
+            for number in (54, 55):
+                with self.subTest(workflow=name, pr=number):
+                    group, _ = self.policy(name, 'pull_request', number, 100)
+                    self.assertNotIn(group, groups)
+                    groups.append(group)
+
+    def test_non_pr_runs_do_not_cancel_or_share_groups(self):
+        for name in self.names:
+            with self.subTest(workflow=name):
+                groups = [self.policy(name, 'pull_request', 54, 100)[0]]
+                events = ['push', 'push']  # Consecutive main pushes.
+                if name == 'build-on-push.yml':
+                    events.append('push')  # Tag push has its own run ID too.
+                if name == 'codeql-analysis.yml':
+                    events.extend(['schedule', 'schedule'])
+                if name in ('e2e-test.yml', 'migration-test.yml', 'browser-regression.yml'):
+                    events.extend(['workflow_dispatch', 'workflow_dispatch'])
+                for run_id, event in enumerate(events, 200):
+                    group, cancel = self.policy(name, event, '', run_id)
+                    self.assertFalse(cancel)
+                    self.assertNotIn(group, groups)
+                    groups.append(group)
+
+
 class PythonCITest(unittest.TestCase):
     def test_changed_python_and_workflow_inputs_trigger_ci(self):
         for event in ('pull_request', 'push'):

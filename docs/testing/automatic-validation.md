@@ -24,6 +24,12 @@ CodeQL도 관련 변경이 포함된 main 대상 `pull_request`와 main 브랜�
 
 후속으로 제품 변경 PR과 하네스 Python/Actions 변경 PR에서 분석이 실행되는지, 후속 PR 브랜치 push가 별도 분석을 생성하지 않는지, 문서 전용 PR/main push에서 분석이 생기지 않는지 확인한다. 제품 변경 main push 및 기존 정기 실행의 분석/결과 업로드 성공도 확인한다. 빌드와 함께 경로 필터의 [GitHub diff 제한](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#git-diff-comparisons)을 따르며, 로컬 대표 경로 대조를 실제 원격 이벤트 확인으로 표시하지 않는다. 브랜치 보호·필수 검사 지정은 변경하지 않는다.
 
+## PR 후속 실행 취소
+
+일반 빌드·CodeQL·하네스는 `${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}` 그룹을 사용한다. `cancel-in-progress`는 `pull_request`에서만 true다. 같은 PR의 동일 워크플로우에 후속 커밋이 올라오면 이전 실행을 취소하고 최신 변경을 검증한다. 다른 PR·워크플로우는 별도 그룹이며 main push·태그·CodeQL 예약 실행은 각 run ID로 분리해 서로 취소하지 않는다. 기존 E2E·DB 마이그레이션·관리자 브라우저 회귀의 취소 식과 정책도 그대로 유지한다.
+
+로컬 회귀는 실제 group/cancel 식에 같은 PR의 서로 다른 run ID, 다른 PR, 서로 다른 워크플로우 및 main push·태그·예약·수동 실행 값을 넣어 그룹 공유·분리를 확인한다. 이 검사는 GitHub 서버가 실행을 실제 취소했다는 증거가 아니다. 원격 후속 확인에서는 빌드·CodeQL·하네스 각각 같은 PR의 후속 커밋에서 이전 실행 cancelled와 최신 실행을 관측하고, 다른 PR·워크플로우·main 실행이 유지되는지 확인한다. CodeQL 정기 분석과 태그 빌드는 기존 일정·릴리스에서 관측하며 검증용 태그·배포는 만들지 않는다.
+
 ## CI 검증 도구의 Python 회귀
 
 `CI validation checks`는 main 대상 PR과 main push에서 `scripts/validation/*.py`(결과 검사기·회귀), `scripts/ci/**`, `.github/workflows/**` 변경을 감지한다. 경로 내부 md/rst/adoc 문서는 제외한다. Python 3.13만 준비하고 Java·Docker·Gradle 준비 없이 아래 두 명령을 별도 단계로 실행한다. unittest 실패는 단계와 CI 실패로 전달된다.
