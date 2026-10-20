@@ -8,9 +8,11 @@
 
 경로 필터는 `src/**`(제품·테스트·리소스·Dockerfile), `frontend/**`(공개/관리자 코드·설정·잠금 파일), `build.gradle*`, `settings.gradle*`, `gradle.properties`, `gradle/**`, `buildSrc/**`, `build-logic/**`, `config/**`(현재 license의 HEADER), `lib_exclude`(bootJar 제외 입력), `lombok.config`(생성자 메타데이터·생성 코드·컴파일 정책), `gradlew`, `gradlew.bat`, `.codecov.yml`, `codecov.yml`, 해당 `.github/workflows/build-on-push.yml`이다. 마지막 `!**/*.md`, `!**/*.rst`, `!**/*.adoc`로 경로 내부 문서를 제외한다. README·docs·하네스 설명·별도 website는 일반 빌드 입력에 포함하지 않는다.
 
+PR 내부 변경 분류도 `.md`·`.rst`·`.adoc`를 영역 판정보다 먼저 제외한다. 백엔드 코드와 프론트 문서를 함께 바꾸면 `backend_check`, 프론트 코드와 백엔드/공통 설정 경로의 문서를 함께 바꾸면 `frontend_check`를 선택한다. 실제 양쪽 코드 또는 공통 빌드 설정 변경은 전체 `build`를 선택한다. main push·태그는 전체 빌드를 유지한다. 분류·job 선택 회귀는 `python3 -B -m unittest discover -s scripts/ci -p 'test_*.py' -v`로 실행하며, 임시 Git 커밋에 실제 워크플로우의 분류 Bash와 job 조건을 적용한다.
+
 PostgreSQL 15·16·17의 기존 `build distribution jacocoTestReport`, Java 25·Codecov 업로드·Docker 이미지 jobs는 유지한다. 기존 릴리스 배포 입력을 보존하기 위해 모든 태그 push도 유지한다. [GitHub 규칙](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onpushpull_requestpull_request_targetpathspaths-ignore)상 태그 push에는 경로 필터가 적용되지 않으므로 문서 전용 제외는 브랜치 push/PR에 대한 조건이다. 이미지 jobs의 기존 `alfio-event/alf.io` 저장소 조건은 유지돼 이 포크에서는 실행하지 않는다.
 
-원격 실행이 허용되면 제품 변경 main 대상 PR에서 빌드 3개가 실행되고 PR 브랜치 push 빌드는 생기지 않는지 확인한다. 문서 전용 PR/브랜치 push 및 main push에서는 실행하지 않아야 하며, 제품 변경의 main 반영 후에는 실행해야 한다. 태그 검증이 필요할 때는 기존 실제 릴리스 절차에서 확인하고 검증만을 위해 임의 태그·이미지 배포를 만들지 않는다. 실행 URL·이벤트·검증 커밋·결과는 후속 기록에 남긴다.
+원격 실행이 허용되면 main 대상 PR에서 단일 영역은 해당 선택 검사, 양쪽 영역·공통 설정은 PostgreSQL 15·16·17 전체 빌드 3개가 실행되고 PR 브랜치 push 빌드는 생기지 않는지 확인한다. 문서 전용 PR/브랜치 push 및 main push에서는 실행하지 않아야 하며, 제품 변경의 main 반영 후에는 실행해야 한다. 태그 검증이 필요할 때는 기존 실제 릴리스 절차에서 확인하고 검증만을 위해 임의 태그·이미지 배포를 만들지 않는다. 실행 URL·이벤트·검증 커밋·결과는 후속 기록에 남긴다.
 
 ## CodeQL CI
 
@@ -21,6 +23,23 @@ CodeQL도 관련 변경이 포함된 main 대상 `pull_request`와 main 브랜�
 마지막 `!**/*.md`, `!**/*.rst`, `!**/*.adoc`로 문서 전용 변경을 제외한다. 이는 [워크플로우 실행 필터](https://docs.github.com/en/code-security/reference/code-scanning/workflow-configuration-options)이며 CodeQL 분석 자체의 languages/paths-ignore를 변경하거나 검사 대상을 줄이지 않는다. 빌드의 Codecov 전용 설정은 CodeQL 전용 입력으로 추가하지 않는다. 태그 push는 일반 빌드/기존 배포 경로에서 처리하고 CodeQL은 main 브랜치·PR·정기 실행으로 검증한다.
 
 후속으로 제품 변경 PR과 하네스 Python/Actions 변경 PR에서 분석이 실행되는지, 후속 PR 브랜치 push가 별도 분석을 생성하지 않는지, 문서 전용 PR/main push에서 분석이 생기지 않는지 확인한다. 제품 변경 main push 및 기존 정기 실행의 분석/결과 업로드 성공도 확인한다. 빌드와 함께 경로 필터의 [GitHub diff 제한](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#git-diff-comparisons)을 따르며, 로컬 대표 경로 대조를 실제 원격 이벤트 확인으로 표시하지 않는다. 브랜치 보호·필수 검사 지정은 변경하지 않는다.
+
+## PR 후속 실행 취소
+
+일반 빌드·CodeQL·하네스는 `${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}` 그룹을 사용한다. `cancel-in-progress`는 `pull_request`에서만 true다. 같은 PR의 동일 워크플로우에 후속 커밋이 올라오면 이전 실행을 취소하고 최신 변경을 검증한다. 다른 PR·워크플로우는 별도 그룹이며 main push·태그·CodeQL 예약 실행은 각 run ID로 분리해 서로 취소하지 않는다. 기존 E2E·DB 마이그레이션·관리자 브라우저 회귀의 취소 식과 정책도 그대로 유지한다.
+
+로컬 회귀는 실제 group/cancel 식에 같은 PR의 서로 다른 run ID, 다른 PR, 서로 다른 워크플로우 및 main push·태그·예약·수동 실행 값을 넣어 그룹 공유·분리를 확인한다. 이 검사는 GitHub 서버가 실행을 실제 취소했다는 증거가 아니다. 원격 후속 확인에서는 빌드·CodeQL·하네스 각각 같은 PR의 후속 커밋에서 이전 실행 cancelled와 최신 실행을 관측하고, 다른 PR·워크플로우·main 실행이 유지되는지 확인한다. CodeQL 정기 분석과 태그 빌드는 기존 일정·릴리스에서 관측하며 검증용 태그·배포는 만들지 않는다.
+
+## CI 검증 도구의 Python 회귀
+
+`CI validation checks`는 main 대상 PR과 main push에서 `scripts/validation/*.py`(결과 검사기·회귀), `scripts/ci/**`, `.github/workflows/**` 변경을 감지한다. 경로 내부 md/rst/adoc 문서는 제외한다. Python 3.13만 준비하고 Java·Docker·Gradle 준비 없이 아래 두 명령을 별도 단계로 실행한다. unittest 실패는 단계와 CI 실패로 전달된다.
+
+```sh
+python3 -B -m unittest discover -s scripts/validation -p 'test_*.py' -v
+python3 -B -m unittest discover -s scripts/ci -p 'test_*.py' -v
+```
+
+워크플로우 회귀는 실제 CI의 결과 검사기 명령을 임시 복사본에서 실행한다. 정상 6건 통과 외에 검사기의 실패 거부를 무력화한 경우와 새 실패 테스트를 추가한 경우를 실행해 비정상 종료 전파를 확인한다. 합성 실패는 임시 복사본 안에서만 발생하며 실제 저장소 파일을 바꾸지 않는다. Python 전용 CI가 기존 E2E·DB 검증을 대체하지는 않는다.
 
 ## 자동 E2E
 
@@ -40,7 +59,7 @@ E2E 전용 작업에는 지연된 이미지 응답이 있어도 로그인 DOM을
 
 GitHub Actions → **Local E2E validation** → **Run workflow**에서 검증할 브랜치를 선택한다. 외부 서버·BrowserStack 비밀 설정과 저장소 이름 제한이 없다. 관련 변경이 포함된 main 대상 `pull_request`(기본 opened·synchronize·reopened)와 main `push`에서 자동 실행한다. 문서 전용 변경은 자동 실행하지 않으며 수동 실행에는 경로 제한이 없다. 브랜치 보호·필수 검사 지정은 변경하지 않는다.
 
-E2E 경로 필터는 `src/main/**`(Java·설정·SQL·템플릿·기존 관리자 화면), `src/test/**`(전용 검사와 모든 테스트 컴파일 입력), `frontend/**`(공개·관리자 코드·화면·프론트 설정과 잠금 파일), `build.gradle*`, `settings.gradle*`, `gradle.properties`, `gradle/**`(Wrapper·버전 카탈로그), `gradlew`, `gradlew.bat`, `scripts/validation/e2e.sh`, 공통 `scripts/validation/check-results.py`·`test_results.py`, 해당 `.github/workflows/e2e-test.yml`이다. 뒤에 `!**/*.md`, `!**/*.rst`, `!**/*.adoc`를 적용해 이 경로 안의 문서도 제외한다. `docs/**`·루트 안내·별도 website 변경은 포함하지 않는다.
+E2E 경로 필터는 `src/main/**`(Java·설정·SQL·템플릿·기존 관리자 화면), `src/test/**`(전용 검사와 모든 테스트 컴파일 입력), `frontend/**`(공개·관리자 코드·화면·프론트 설정과 잠금 파일), `build.gradle*`, `settings.gradle*`, `gradle.properties`, `gradle/**`(Wrapper·버전 카탈로그), `buildSrc/**`, `build-logic/**`, `config/**`(Gradle license HEADER), `lombok.config`(컴파일 정책), `lib_exclude`(bootJar 구성), `gradlew`, `gradlew.bat`, `scripts/validation/e2e.sh`, 공통 `scripts/validation/check-results.py`·`test_results.py`, 해당 `.github/workflows/e2e-test.yml`이다. 뒤에 `!**/*.md`, `!**/*.rst`, `!**/*.adoc`를 적용해 이 경로 안의 문서도 제외한다. `docs/**`·루트 안내·별도 website 변경은 포함하지 않는다.
 
 취소 그룹은 `${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}`이다. 같은 PR의 동일 워크플로우만 그룹을 공유하고 `cancel-in-progress`는 PR에서만 true다. main push·수동 실행은 각 run ID로 분리하고 이전 실행을 취소하지 않는다. 다른 PR·DB 마이그레이션과도 분리한다. 취소된 실행은 검증 통과로 처리하지 않는다.
 
@@ -64,7 +83,7 @@ Java 17 경로를 `JAVA17_HOME`으로 지정한다. macOS에서는 설치된 Jav
 
 GitHub Actions → **Local DB migration validation** → **Run workflow**에서 검증할 브랜치를 선택한다. 현재 코드 체크아웃을 빌드하며 외부 latest 앱 이미지·레지스트리 로그인·기존 DB 비밀값을 사용하지 않는다. 관련 변경이 포함된 main 대상 `pull_request`(기본 opened·synchronize·reopened)와 main `push`에서 자동 실행하며 `workflow_dispatch`도 유지한다. 문서 전용 변경은 자동 실행하지 않는다. 전용 JUnit class는 `alfio.e2e.MigrationValidatorTest`로 이동했다. 이전 소스·JAR·앱·DB·브라우저는 성공·실패 후 정리한다. 유료 결제·외부 메일·모든 과거 버전 조합·PostgreSQL major upgrade는 범위 밖이다.
 
-마이그레이션 경로 필터도 `src/main/**`, `src/test/**`, `frontend/**`, `build.gradle*`, `settings.gradle*`, `gradle.properties`, `gradle/**`, `gradlew`, `gradlew.bat`, 공통 `scripts/validation/check-results.py`·`test_results.py`를 포함한다. 전용 입력은 `scripts/validation/migration.sh`와 `.github/workflows/migration-test.yml`이다. 뒤의 `!**/*.md`, `!**/*.rst`, `!**/*.adoc`로 경로 내부 문서도 제외한다. 현재 `bootJar`가 양쪽 프론트를 포함하고 이전 앱의 UI 예약 흐름과 업그레이드 후 공개 API를 확인하며, 전체 테스트 소스를 컴파일하고 공통 환경·브라우저·예약 흐름을 사용하므로 프론트와 테스트 입력도 필요하다. 이전 릴리스 소스는 기존 고정 SHA를 유지한다. 다른 전용 스크립트·워크플로우 및 별도 website는 포함하지 않는다.
+마이그레이션 경로 필터도 `src/main/**`, `src/test/**`, `frontend/**`, `build.gradle*`, `settings.gradle*`, `gradle.properties`, `gradle/**`, `buildSrc/**`, `build-logic/**`, `config/**`, `lombok.config`, `lib_exclude`, `gradlew`, `gradlew.bat`, 공통 `scripts/validation/check-results.py`·`test_results.py`를 포함한다. 전용 입력은 `scripts/validation/migration.sh`와 `.github/workflows/migration-test.yml`이다. 뒤의 `!**/*.md`, `!**/*.rst`, `!**/*.adoc`로 경로 내부 문서도 제외한다. 현재 `bootJar`가 양쪽 프론트를 포함하고 이전 앱의 UI 예약 흐름과 업그레이드 후 공개 API를 확인하며, 전체 테스트 소스를 컴파일하고 공통 환경·브라우저·예약 흐름을 사용하므로 프론트와 테스트 입력도 필요하다. 공통 Gradle 입력 중 현재 없는 buildSrc·build-logic도 향후 추가될 빌드 로직의 누락을 막도록 포함한다. 이전 릴리스 소스는 기존 고정 SHA를 유지한다. 다른 전용 스크립트·워크플로우 및 별도 website는 포함하지 않는다.
 
 취소 그룹·정책은 E2E와 같은 식을 사용하되 워크플로우 이름으로 분리한다. 같은 PR의 마이그레이션 새 실행만 이전 마이그레이션 실행을 취소한다. 다른 PR·E2E·main push·수동 실행과 섞이지 않으며 push·수동 실행은 run ID별로 분리해 취소하지 않는다.
 

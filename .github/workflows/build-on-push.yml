@@ -51,6 +51,10 @@ on:
 permissions:
     contents: read
 
+concurrency:
+    group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
     detect_changes:
         runs-on: ubuntu-latest
@@ -81,6 +85,9 @@ jobs:
                   common=false
                   while IFS= read -r path; do
                     case "$path" in
+                      *.md|*.rst|*.adoc)
+                        continue
+                        ;;
                       frontend/*)
                         frontend=true
                         ;;
