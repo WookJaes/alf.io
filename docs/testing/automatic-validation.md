@@ -97,11 +97,15 @@ Windows의 `python3`가 없거나 Microsoft Store 안내용 실행 별칭을 가
 )
 ```
 
-PowerShell의 `py -3`만으로 내부 Bash PATH를 준비한 것으로 간주하지 않는다. 위 검사는 하네스의 Windows 기본 인코딩 회귀(`-X utf8=0`) 전체를 대체하지 않는다. 심볼릭 링크 생성 권한이 없는 Windows에서는 해당 링크 생성 테스트만 WinError 1314 사유로 skip될 수 있으며 실제 실행 건수와 구분한다. 다른 실패를 일괄 skip하지 않는다. 자세한 기준은 [하네스 로컬 검증](../harness/local-validation.md#windows-링크-검사의-실행-조건)을 따른다.
+PowerShell의 `py -3`만으로 내부 Bash PATH를 준비한 것으로 간주하지 않는다. 위 검사는 하네스의 Windows 기본 인코딩 회귀(`-X utf8=0`) 전체를 대체하지 않는다.
+
+Windows에서는 테스트 코드가 정한 운영체제 조건에 따라 POSIX 전용 실행 중개 테스트(`test_execution_gate`) 46건과 chmod 실행 비트 변경 테스트(`test_session`) 1건을 건너뛴다. 이 47건은 환경 준비 실패가 아닌 의도된 스킵이며 실제 실행 건수에 포함하지 않는다. 심볼릭 링크 생성 권한이 없어 WinError 1314가 발생하면 해당 링크 생성 테스트도 추가로 스킵될 수 있다. 다른 실패를 일괄 skip하지 않는다. 자세한 기준은 [하네스 로컬 검증](../harness/local-validation.md#windows-링크-검사의-실행-조건)을 따른다.
 
 ### 직접 실행과 기존 근거 구분
 
 [PR #55 논의](https://github.com/WookJaes/alf.io/pull/55#discussion_r4321166389)와 [리뷰 재현 기록](https://github.com/WookJaes/alf.io/pull/55#discussion_r4321016028)은 **기존 Windows 근거**다. 당시 Windows 10 / Python 3.13.15 / Git Bash에서 `scripts/ci` 14건 중 2건이 내부 `python3` 때문에 실패했고 정상 Python 대체 명령을 PATH에 둔 후 14건이 통과했다고 보고했다. 이는 이번 문서의 전체 명령을 Windows에서 새로 실행했다는 뜻이 아니다.
+
+후속 [PR #57 리뷰의 Windows 실행 결과](https://github.com/WookJaes/alf.io/pull/57#discussion_r4322514584)는 리뷰어가 Windows 10 / Python 3.13.15 / Git Bash에서 위 블록을 그대로 실행한 별도 근거다. 구조 검사, 하네스 실제 243건(전체 290건 중 운영체제 조건으로 47건 스킵), 결과 검사기 6건, CI 회귀 14건이 통과했고 임시 PATH·파일 정리도 확인했다고 보고했다. 이 결과는 작성자의 macOS 실행이나 Windows 직접 실행 결과로 합산하지 않는다.
 
 이번 수정의 macOS 실제 실행 결과·건수와 Windows 미실행 범위는 [작업 기록](../harness/records/2026-10-20-issue56-python-validation.md)에 구분한다. Python 회귀 성공은 제품 컴파일·프론트 빌드·브라우저 E2E·DB 마이그레이션 성공과도 구분한다.
 
