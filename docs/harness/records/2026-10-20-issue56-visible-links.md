@@ -2,7 +2,7 @@
 
 - 날짜 / 상태: 2026-10-20 / completed (작업 단위 2)
 - 기준: `docs/56-non-deployment-fork`의 첫 작업 단위 이후. 기존 사용자 변경 없음. [이슈 #56](https://github.com/WookJaes/alf.io/issues/56)의 화면·website 범위만 수정했다. 현재 Codex가 구현·검증·자체 리뷰했다.
-- 지침·초기 상태는 [운영 안내 기록](2026-10-20-issue56-fork-guidance.md)과 같다. 실행 기준은 저장소 루트(빌드는 각 프론트 폴더), macOS / Python 3.9.6 / Node v26.0.0 / TypeScript 5.9.3 / Vite 7.3.0 / Angular CLI 17.0.9. 검증 대상은 이 커밋의 diff.
+- 지침·초기 상태는 [운영 안내 기록](2026-10-20-issue56-fork-guidance.md)과 같다. 실행 기준은 저장소 루트(빌드는 각 프론트 폴더), macOS / Python 3.9.6 / Node v26.0.0 / TypeScript 5.9.3 / Vite 7.3.0 / Angular CLI 17.3.17. 검증 대상은 이 커밋의 diff.
 
 | 완료 기준 | 변경·검증 | 결과 |
 |---|---|---|

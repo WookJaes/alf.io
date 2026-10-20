@@ -1,6 +1,6 @@
 # 로컬·포크 자동 검증
 
-저장소 루트에서 실행한다. Java 25, Docker Engine(실행 중), Python 3, 인터넷 접근이 필요하다. E2E는 설치된 Chrome과 Selenium Manager가 준비한 호환 드라이버를 사용한다. CI의 ubuntu-latest에도 Chrome이 설치되어 있어야 한다. 새 라이브러리는 추가하지 않는다.
+저장소 루트에서 실행한다. 제품 E2E·DB 검증에는 Java 25, Docker Engine(실행 중), Python 3, 인터넷 접근이 필요하다. Python 회귀만 실행할 때는 아래 별도 조건을 따른다. E2E는 설치된 Chrome과 Selenium Manager가 준비한 호환 드라이버를 사용한다. CI의 ubuntu-latest에도 Chrome이 설치되어 있어야 한다. 새 라이브러리는 추가하지 않는다.
 
 ## 일반 빌드 CI
 
@@ -40,6 +40,70 @@ python3 -B -m unittest discover -s scripts/ci -p 'test_*.py' -v
 ```
 
 워크플로우 회귀는 실제 CI의 결과 검사기 명령을 임시 복사본에서 실행한다. 정상 6건 통과 외에 검사기의 실패 거부를 무력화한 경우와 새 실패 테스트를 추가한 경우를 실행해 비정상 종료 전파를 확인한다. 합성 실패는 임시 복사본 안에서만 발생하며 실제 저장소 파일을 바꾸지 않는다. Python 전용 CI가 기존 E2E·DB 검증을 대체하지는 않는다.
+
+## macOS·Windows의 로컬 Python 회귀
+
+Python 회귀에는 Java·Docker·앱 기동이 필요하지 않다. 하네스는 Python **3.9 이상** 표준 라이브러리와 Git을 사용하며, 현재 Python CI는 **3.13**을 준비한다. `scripts/ci` 회귀에는 Git과 **Bash**도 필요하다. 저장소 루트에서 실행하며 임시 Git 저장소·합성 실패는 테스트의 임시 디렉터리 안에서만 만든다.
+
+현재 `.github/workflows/ci-validation-check.yml`은 Ubuntu에서 두 Python 회귀를 `python3`로 실행한다. `scripts/ci/test_workflows.py`의 `PythonCITest`는 워크플로우의 실제 명령을 읽어 `bash --noprofile --norc -eo pipefail -c`로 실행한다. 따라서 **바깥 실행 명령만 `python` 또는 `py -3`로 바꿔도 내부 Bash의 요구사항은 해결되지 않는다.** Bash PATH에도 실제 Python을 실행하는 `python3`가 있어야 한다. 셸 별칭·함수만 정의하면 새 Bash에는 전달되지 않을 수 있다.
+
+하네스 CI(`harness-check.yml`)는 Ubuntu·Windows에서 `python`으로 구조 검사와 `ai/tests`를 실행한다. Windows에서는 `PYTHONIOENCODING=utf-8`과 별도 `-X utf8=0` 회귀도 사용한다. 이것을 Ubuntu 전용 `scripts/ci` CI와 혼동하지 않는다. 테스트·워크플로우의 Python 선택 로직은 변경하지 않는다.
+
+### macOS 준비·실행
+
+Python 3.9 이상과 Git·Bash를 준비한다. 여러 Python 설치가 있으면 같은 터미널에서 실제 경로와 버전을 먼저 확인한다. 새 도구 설치나 시스템 PATH 변경을 이 문서의 명령이 자동 수행하지 않는다.
+
+```sh
+command -v python3
+python3 -c 'import sys; print(sys.executable); print(sys.version); assert sys.version_info >= (3, 9)'
+git --version
+bash --version
+bash --noprofile --norc -eo pipefail -c 'command -v python3; python3 -c "import sys; print(sys.executable); print(sys.version); assert sys.version_info >= (3, 9)"'
+
+python3 -B ai/tests/check.py
+python3 -B -m unittest discover -s ai/tests -p 'test_*.py' -v
+python3 -B -m unittest discover -s scripts/validation -p 'test_*.py' -v
+python3 -B -m unittest discover -s scripts/ci -p 'test_*.py' -v
+```
+
+### Windows 준비·실행 (Git Bash)
+
+Git for Windows의 Git Bash와 정상 Python 설치를 준비한다. 먼저 Git Bash에서 `python -c 'import sys; print(sys.executable); print(sys.version)'`가 실행되는지 확인한다. `python`이 없다면 `py -3 -c 'import sys; print(sys.executable); print(sys.version)'`로 확인하고 아래 첫 줄의 `python -c`를 `py -3 -c`로 바꾼다. 둘 다 실패하면 정상 Python 설치부터 준비한다.
+
+Windows의 `python3`가 없거나 Microsoft Store 안내용 실행 별칭을 가리키면 `Python ` 출력·종료 코드 49 등으로 내부 회귀가 실패할 수 있다. `command -v python3`만으로 정상 설치를 판정하지 말고 실제 `sys.executable`·버전을 확인한다.
+
+다음은 **Git Bash에서 저장소 루트**를 연 뒤 실행하는 세션 한정 예시다. 확인한 Python의 절대 경로를 임시 `python3` 실행 파일에 고정한다. 전역 PATH·Windows 앱 실행 별칭·관리자 권한·개발자 모드를 변경하지 않는다. 전체 괄호 블록은 하위 셸에서 실행되며 종료 시 원래 PATH로 돌아가고 임시 파일을 정리한다.
+
+```bash
+(
+  set -e
+  regression_python_exe="$(python -c 'import sys; print(sys.executable)')"
+  regression_python_exe="$(cygpath -u "$regression_python_exe")"
+  "$regression_python_exe" -c 'import sys; print(sys.executable); print(sys.version); assert sys.version_info >= (3, 9)'
+  git --version
+  bash --version
+  regression_shim_dir="$(mktemp -d)"
+  trap 'rm -f "$regression_shim_dir/python3"; rmdir "$regression_shim_dir"' EXIT
+  printf '#!/usr/bin/env bash\nexec %q "$@"\n' "$regression_python_exe" > "$regression_shim_dir/python3"
+  chmod +x "$regression_shim_dir/python3"
+  export PATH="$regression_shim_dir:$PATH"
+  export PYTHONIOENCODING=utf-8
+  hash -r
+  bash --noprofile --norc -eo pipefail -c 'command -v python3; python3 -c "import sys; print(sys.executable); print(sys.version); assert sys.version_info >= (3, 9)"'
+  python3 -B ai/tests/check.py
+  python3 -B -m unittest discover -s ai/tests -p 'test_*.py' -v
+  python3 -B -m unittest discover -s scripts/validation -p 'test_*.py' -v
+  python3 -B -m unittest discover -s scripts/ci -p 'test_*.py' -v
+)
+```
+
+PowerShell의 `py -3`만으로 내부 Bash PATH를 준비한 것으로 간주하지 않는다. 위 검사는 하네스의 Windows 기본 인코딩 회귀(`-X utf8=0`) 전체를 대체하지 않는다. 심볼릭 링크 생성 권한이 없는 Windows에서는 해당 링크 생성 테스트만 WinError 1314 사유로 skip될 수 있으며 실제 실행 건수와 구분한다. 다른 실패를 일괄 skip하지 않는다. 자세한 기준은 [하네스 로컬 검증](../harness/local-validation.md#windows-링크-검사의-실행-조건)을 따른다.
+
+### 직접 실행과 기존 근거 구분
+
+[PR #55 논의](https://github.com/WookJaes/alf.io/pull/55#discussion_r4321166389)와 [리뷰 재현 기록](https://github.com/WookJaes/alf.io/pull/55#discussion_r4321016028)은 **기존 Windows 근거**다. 당시 Windows 10 / Python 3.13.15 / Git Bash에서 `scripts/ci` 14건 중 2건이 내부 `python3` 때문에 실패했고 정상 Python 대체 명령을 PATH에 둔 후 14건이 통과했다고 보고했다. 이는 이번 문서의 전체 명령을 Windows에서 새로 실행했다는 뜻이 아니다.
+
+이번 수정의 macOS 실제 실행 결과·건수와 Windows 미실행 범위는 [작업 기록](../harness/records/2026-10-20-issue56-python-validation.md)에 구분한다. Python 회귀 성공은 제품 컴파일·프론트 빌드·브라우저 E2E·DB 마이그레이션 성공과도 구분한다.
 
 ## 자동 E2E
 
