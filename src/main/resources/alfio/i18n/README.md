@@ -1,3 +1,15 @@
+## Translation contributions
+
+### Contributing to this fork
+
+This repository, [WookJaes/alf.io](https://github.com/WookJaes/alf.io), is an independent fork for code changes and validation. For translation changes specific to this fork, open an [issue](https://github.com/WookJaes/alf.io/issues) or submit a pull request to `WookJaes/alf.io`, targeting `main`. Follow the [fork's contribution guide](../../../../../README.md#contributing--이-포크에-기여하기).
+
+The upstream Discussions and POEditor links below belong to the original project. They are preserved as upstream reference material, not as contribution or support channels for this fork. The upstream process, including its restriction on translation pull requests, does not define this fork's contribution process. Check the upstream project's current guidance before following these inherited instructions.
+
+### Upstream translation instructions (inherited reference)
+
+The following instructions describe the original `alfio-event/alf.io` project.
+
 ## Help us translate Alf.io into your language!
 
 ### How it works
