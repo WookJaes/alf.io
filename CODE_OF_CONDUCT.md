@@ -1,46 +1,19 @@
-# Contributor Covenant Code of Conduct
+# 기여자 행동 강령
 
-## Our Pledge
+## 참여 기준
 
-In the interest of fostering an open and welcoming environment, we as contributors and maintainers pledge to making participation in our project and our community a harassment-free experience for everyone, regardless of age, body size, disability, ethnicity, gender identity and expression, level of experience, nationality, personal appearance, race, religion, or sexual identity and orientation.
+`WookJaes/alf.io`의 이슈·PR·리뷰에서는 서로 다른 배경과 경험을 존중하고, 포용적인 언어와 구체적인 근거로 소통합니다. 건설적인 비판을 받아들이고 다른 참여자의 관점을 존중합니다.
 
-## Our Standards
+성적 괴롭힘, 모욕·차별·인신공격, 공개·비공개 괴롭힘, 동의 없는 개인정보 공개는 허용하지 않습니다. 코드와 문제 해결에 초점을 맞춰 주세요.
 
-Examples of behavior that contributes to creating a positive environment include:
+## 적용 범위와 운영 안내
 
-* Using welcoming and inclusive language
-* Being respectful of differing viewpoints and experiences
-* Gracefully accepting constructive criticism
-* Focusing on what is best for the community
-* Showing empathy towards other community members
+이 안내는 이 포크의 저장소 내 참여에 적용합니다. 원본 운영진이나 원본 커뮤니티를 대표하지 않습니다. 이 포크는 별도 신고 창구, 상시 조사·집행 조직, 비밀 유지 처리나 응답 기한을 제공한다고 약속하지 않습니다. 원본 연락처는 이 포크의 담당 창구가 아닙니다.
 
-Examples of unacceptable behavior by participants include:
+공개 논의에서는 피해자의 개인정보나 민감한 신고 내용을 올리지 마세요. 공개 가능한 저장소 운영 개선은 [포크 이슈](https://github.com/WookJaes/alf.io/issues)에 제안할 수 있습니다.
 
-* The use of sexualized language or imagery and unwelcome sexual attention or advances
-* Trolling, insulting/derogatory comments, and personal or political attacks
-* Public or private harassment
-* Publishing others' private information, such as a physical or electronic address, without explicit permission
-* Other conduct which could reasonably be considered inappropriate in a professional setting
+## 원본 정책·출처
 
-## Our Responsibilities
+[원본 행동 강령](https://github.com/alfio-event/alf.io/blob/main/CODE_OF_CONDUCT.md)에서 이어받은 참여 기준입니다. 원본의 연락처·조사·제재 약속은 이 포크의 지원 약속으로 적용하지 않습니다.
 
-Project maintainers are responsible for clarifying the standards of acceptable behavior and are expected to take appropriate and fair corrective action in response to any instances of unacceptable behavior.
-
-Project maintainers have the right and responsibility to remove, edit, or reject comments, commits, code, wiki edits, issues, and other contributions that are not aligned to this Code of Conduct, or to ban temporarily or permanently any contributor for other behaviors that they deem inappropriate, threatening, offensive, or harmful.
-
-## Scope
-
-This Code of Conduct applies both within project spaces and in public spaces when an individual is representing the project or its community. Examples of representing a project or community include using an official project e-mail address, posting via an official social media account, or acting as an appointed representative at an online or offline event. Representation of a project may be further defined and clarified by project maintainers.
-
-## Enforcement
-
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the project team at [community@alf.io](mailto:community@alf.io). The project team will review and investigate all complaints, and will respond in a way that it deems appropriate to the circumstances. The project team is obligated to maintain confidentiality with regard to the reporter of an incident. Further details of specific enforcement policies may be posted separately.
-
-Project maintainers who do not follow or enforce the Code of Conduct in good faith may face temporary or permanent repercussions as determined by other members of the project's leadership.
-
-## Attribution
-
-This Code of Conduct is adapted from the [Contributor Covenant][homepage], version 1.4, available at [http://contributor-covenant.org/version/1/4][version]
-
-[homepage]: http://contributor-covenant.org
-[version]: http://contributor-covenant.org/version/1/4/
+원본은 [Contributor Covenant](http://contributor-covenant.org) [버전 1.4](http://contributor-covenant.org/version/1/4/)를 바탕으로 작성되었습니다. 해당 출처와 기존 라이선스·저작권 고지를 보존합니다.

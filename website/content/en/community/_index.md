@@ -5,9 +5,9 @@ menu:
     weight: 40
 ---
 
-<!--add blocks of content here to add more sections to the community page -->
+<p>아래는 원본 기여 이력입니다. 포크의 직접 기여와 구분합니다. <a href="https://github.com/WookJaes/alf.io/commits/main/">포크 이후 커밋</a>을 함께 확인하세요.</p>
 
-<h2 class="text-center mb-5">The people behind alf.io</h2>
+<h2 class="text-center mb-5">원본 alf.io에서 이어받은 기여자 이력</h2>
 <div class="row">
   <div id="contributors" class="col-8 offset-2 row">
 

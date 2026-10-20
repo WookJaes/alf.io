@@ -25,33 +25,33 @@ export class ProjectBanner extends LitElement {
     render() {
         const notFullBanner = () => html`
             <div>
-                <h5 class="text-muted">Powered by <a href="https://alf.io" target="_blank">Alf.io</a> v.${this.alfioVersion}</h5>
-                <small><a href="https://github.com/alfio-event/alf.io/issues" target="_blank" rel="noopener">report an issue</a> or <a href="https://github.com/alfio-event/alf.io/discussions" target="_blank" rel="nofollow noopener noreferrer">ask for help</a></small>
+                <h5 class="text-muted">Powered by <a href="https://github.com/WookJaes/alf.io" target="_blank">Alf.io</a> v.${this.alfioVersion}</h5>
+                <small><a href="https://github.com/WookJaes/alf.io/issues" target="_blank" rel="noopener">포크 이슈</a> · <a href="https://github.com/WookJaes/alf.io/blob/main/README.md#contributing--이-포크에-기여하기" target="_blank" rel="nofollow noopener noreferrer">기여 안내</a></small>
                 <div class="wMarginTop10px">
-                    <sl-button variant="success" size="small" href="https://alf.io/usage-form/" target="_blank" rel="noopener">Tell us about you!</sl-button>
+                    <sl-button variant="success" size="small" href="https://github.com/WookJaes/alf.io" target="_blank" rel="noopener">포크 저장소</sl-button>
                 </div>
             </div>
         `;
 
         const fullBanner = () => html`
             <div>
-                <h3 class="text-center">Thank you for using Alf.io!</h3>
-                <h4> We don't track usage in any way, because we respect your privacy<br>
-                ...but we're very happy that you've decided to use Alf.io and we'd love to hear your story! </h4>
+                <h3 class="text-center">Alf.io 기반 독립 포크입니다.</h3>
+                <h4> 이 포크는 코드 수정·검증을 목적으로 합니다.<br>
+                앱·Docker 이미지·웹사이트를 별도로 배포하지 않습니다. </h4>
                 <div>&nbsp;</div>
                 <div class="row">
                     <div>
-                        <sl-button variant="primary" href="https://alf.io/usage-form/" target="_blank" rel="noopener">
-                            Tell us about you!
+                        <sl-button variant="primary" href="https://github.com/WookJaes/alf.io" target="_blank" rel="noopener">
+                            포크 저장소
                         </sl-button>
                     </div>
                     <div>
-                        <sl-button variant="success" href="https://opencollective.com/alfio/contribute" target="_blank" rel="noopener">
-                            Contribute on OpenCollective
+                        <sl-button variant="success" href="https://github.com/WookJaes/alf.io/issues" target="_blank" rel="noopener">
+                            포크 이슈
                         </sl-button>
                     </div>
                     <div>
-                        <sl-button type="button" variant="default" @click=${this.dismiss}>Dismiss</sl-button>
+                        <sl-button type="button" variant="default" @click=${this.dismiss}>닫기</sl-button>
                     </div>
                 </div>
             </div>

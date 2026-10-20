@@ -82,7 +82,7 @@ copyright = "The Alf.io contributors"
 version_menu = "Releases"
 
 # Repository configuration (URLs for in-page links to opening issues and suggesting changes)
-github_repo = "https://github.com/alfio-event/alf.io"
+github_repo = "https://github.com/WookJaes/alf.io"
 # An optional link to a related project repo. For example, the sibling repository where your product code lives.
 #github_project_repo = "https://github.com/alfio-event/alf.io"
 
@@ -121,15 +121,15 @@ no = 'Sorry to hear that. Please <a href="https://github.com/USERNAME/REPOSITORY
 [params.links]
 # End user relevant links. These will show up on left side of footer and in the community page if you have one.
 [[params.links.user]]
-	name = "User mailing list"
-	url = "https://github.com/alfio-event/alf.io/discussions"
+	name = "포크 이슈"
+	url = "https://github.com/WookJaes/alf.io/issues"
 	icon = "fa fa-envelope"
-        desc = "Discussion and help from your fellow users"
+        desc = "공개 가능한 코드 개선·재현 정보"
 [[params.links.user]]
-	name ="Twitter"
-	url = "https://twitter.com/alfio_event"
+	name ="포크 안내"
+	url = "https://github.com/WookJaes/alf.io"
 	icon = "fab fa-twitter"
-        desc = "Follow us on Twitter to get the latest news!"
+        desc = "코드 수정·검증용 독립 포크, 별도 배포 없음"
 #[[params.links.user]]
 #	name = "Stack Overflow"
 #	url = "https://example.org/stack"
